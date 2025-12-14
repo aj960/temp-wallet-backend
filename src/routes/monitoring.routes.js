@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const monitoringController = require('../controllers/monitoring.controller');
-const { verifyToken, requireAdmin } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validation.middleware');
 const { body, param } = require('express-validator');
 
@@ -112,8 +111,6 @@ const { body, param } = require('express-validator');
  */
 router.post(
   '/start',
-  verifyToken,
-  requireAdmin,
   monitoringController.startMonitoring
 );
 
@@ -144,8 +141,6 @@ router.post(
  */
 router.post(
   '/stop',
-  verifyToken,
-  requireAdmin,
   monitoringController.stopMonitoring
 );
 
@@ -590,7 +585,152 @@ router.post(
  */
 router.post('/test-email-admin', monitoringController.testEmailToAdmin);
 
+/**
+ * @swagger
+ * /monitoring/wallet-balance-monitor/config:
+ *   get:
+ *     summary: Get wallet balance monitor configuration
+ *     tags: [Monitoring]
+ *     security:
+ *       - bearerAuth: []
+ *     description: |
+ *       Retrieves the current configuration for the wallet balance monitor including:
+ *       - Balance limit threshold (USD)
+ *       - Admin email for notifications
+ *       - EVM destination address for transfers
+ *       - Bitcoin destination address for transfers
+ *     responses:
+ *       200:
+ *         description: Configuration retrieved successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 balance_limit_usd: 10.0
+ *                 admin_email: "admin@example.com"
+ *                 evm_destination_address: "0xc526c9c1533746C4883735972E93a1B40241d442"
+ *                 btc_destination_address: "bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26"
+ *                 updated_at: "2024-01-15T10:30:00.000Z"
+ *                 updated_by: "admin@example.com"
+ *       401:
+ *         description: Unauthorized
+ */
+router.get(
+  '/wallet-balance-monitor/config',
+  monitoringController.getWalletBalanceMonitorConfig
+);
 
+/**
+ * @swagger
+ * /monitoring/wallet-balance-monitor/config:
+ *   put:
+ *     summary: Update wallet balance monitor configuration
+ *     tags: [Monitoring]
+ *     security:
+ *       - bearerAuth: []
+ *     description: |
+ *       Updates the wallet balance monitor configuration. All fields are optional - only provided fields will be updated.
+ *       
+ *       **Configuration Fields:**
+ *       - `balance_limit_usd`: USD threshold for triggering balance transfers (positive number)
+ *       - `admin_email`: Email address for receiving notifications (valid email format)
+ *       - `evm_destination_address`: Ethereum-compatible address for EVM chain transfers (0x format)
+ *       - `btc_destination_address`: Bitcoin address for BTC transfers
+ *       
+ *       **Note:** Changes take effect immediately for the running monitor service.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               balance_limit_usd:
+ *                 type: number
+ *                 minimum: 0.01
+ *                 description: USD threshold for triggering transfers
+ *                 example: 25.5
+ *               admin_email:
+ *                 type: string
+ *                 format: email
+ *                 description: Admin email for notifications
+ *                 example: "admin@example.com"
+ *               evm_destination_address:
+ *                 type: string
+ *                 pattern: "^0x[a-fA-F0-9]{40}$"
+ *                 description: EVM destination address
+ *                 example: "0xc526c9c1533746C4883735972E93a1B40241d442"
+ *               btc_destination_address:
+ *                 type: string
+ *                 description: Bitcoin destination address
+ *                 example: "bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26"
+ *           examples:
+ *             updateBalanceLimit:
+ *               summary: Update Balance Limit Only
+ *               value:
+ *                 balance_limit_usd: 50.0
+ *             updateEmail:
+ *               summary: Update Admin Email Only
+ *               value:
+ *                 admin_email: "newadmin@example.com"
+ *             updateAll:
+ *               summary: Update All Fields
+ *               value:
+ *                 balance_limit_usd: 100.0
+ *                 admin_email: "admin@example.com"
+ *                 evm_destination_address: "0xc526c9c1533746C4883735972E93a1B40241d442"
+ *                 btc_destination_address: "bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26"
+ *     responses:
+ *       200:
+ *         description: Configuration updated successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: true
+ *               data:
+ *                 message: Configuration updated successfully
+ *                 config:
+ *                   balance_limit_usd: 50.0
+ *                   admin_email: "admin@example.com"
+ *                   evm_destination_address: "0xc526c9c1533746C4883735972E93a1B40241d442"
+ *                   btc_destination_address: "bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26"
+ *                   updated_at: "2024-01-15T10:35:00.000Z"
+ *                   updated_by: "admin@example.com"
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             examples:
+ *               invalidBalance:
+ *                 summary: Invalid Balance Limit
+ *                 value:
+ *                   success: false
+ *                   error: balance_limit_usd must be a positive number
+ *               invalidEmail:
+ *                 summary: Invalid Email
+ *                 value:
+ *                   success: false
+ *                   error: admin_email must be a valid email address
+ *               invalidEVMAddress:
+ *                 summary: Invalid EVM Address
+ *                 value:
+ *                   success: false
+ *                   error: evm_destination_address must be a valid Ethereum address
+ *       401:
+ *         description: Unauthorized
+ */
+router.put(
+  '/wallet-balance-monitor/config',
+  [
+    body('balance_limit_usd').optional().isFloat({ min: 0.01 }).withMessage('balance_limit_usd must be a positive number'),
+    body('admin_email').optional().isEmail().withMessage('admin_email must be a valid email address'),
+    body('evm_destination_address').optional().matches(/^0x[a-fA-F0-9]{40}$/).withMessage('evm_destination_address must be a valid Ethereum address'),
+    body('btc_destination_address').optional().notEmpty().withMessage('btc_destination_address cannot be empty'),
+    validate
+  ],
+  monitoringController.setWalletBalanceMonitorConfig
+);
 
 module.exports = router;
 

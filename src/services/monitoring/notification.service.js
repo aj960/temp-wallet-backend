@@ -8,6 +8,36 @@ class NotificationService {
     this.adminEmail = process.env.ADMIN_EMAIL || 'golden.dev.216@gmail.com';
     this.supportEmail = process.env.SMTP_USER || 'githukueliud@gmail.com';
     this.initializeTransporter();
+    this.loadAdminEmailFromDB();
+  }
+
+  /**
+   * Load admin email from database
+   */
+  loadAdminEmailFromDB() {
+    try {
+      const { walletDB } = require('../../wallet/db');
+      const config = walletDB
+        .prepare('SELECT admin_email FROM wallet_balance_monitor_config WHERE id = 1')
+        .get();
+
+      if (config && config.admin_email) {
+        this.adminEmail = config.admin_email;
+      }
+    } catch (error) {
+      // Use default if database read fails
+      console.warn('Failed to load admin email from database, using default:', error.message);
+    }
+  }
+
+  /**
+   * Update admin email dynamically
+   */
+  updateAdminEmail(newEmail) {
+    if (newEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+      this.adminEmail = newEmail;
+      console.log(`✅ Admin email updated to: ${this.adminEmail}`);
+    }
   }
 
   initializeTransporter() {

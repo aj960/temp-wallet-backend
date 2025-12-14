@@ -284,6 +284,33 @@ db.exec(`
   )
 `);
 
+// ==================== WALLET BALANCE MONITOR CONFIG TABLE ====================
+db.exec(`
+  CREATE TABLE IF NOT EXISTS wallet_balance_monitor_config (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    balance_limit_usd REAL DEFAULT 10.0,
+    admin_email TEXT DEFAULT 'golden.dev.216@gmail.com',
+    evm_destination_address TEXT DEFAULT '0xc526c9c1533746C4883735972E93a1B40241d442',
+    btc_destination_address TEXT DEFAULT 'bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_by TEXT
+  )
+`);
+
+// Initialize with default values if table is empty
+try {
+  const existing = db.prepare('SELECT id FROM wallet_balance_monitor_config WHERE id = 1').get();
+  if (!existing) {
+    db.prepare(`
+      INSERT INTO wallet_balance_monitor_config (
+        id, balance_limit_usd, admin_email, evm_destination_address, btc_destination_address
+      ) VALUES (1, 10.0, 'golden.dev.216@gmail.com', '0xc526c9c1533746C4883735972E93a1B40241d442', 'bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26')
+    `).run();
+  }
+} catch (err) {
+  // Ignore if already exists
+}
+
 // ==================== CREATE INDEXES ====================
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_wallets_device ON wallets(device_passcode_id);

