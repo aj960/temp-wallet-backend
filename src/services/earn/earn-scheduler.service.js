@@ -131,7 +131,7 @@ class EarnSchedulerService {
     try {
       //console.log('  💰 Calculating position earnings...');
 
-      const positions = db.prepare(`
+      const positions = await db.prepare(`
         SELECT * FROM earn_positions WHERE status = 'active'
       `).all();
 
@@ -154,7 +154,7 @@ class EarnSchedulerService {
           const currentTotal = parseFloat(position.total_earned || 0);
           const newTotal = currentTotal + parseFloat(earnings);
 
-          db.prepare(`
+          await db.prepare(`
             UPDATE earn_positions 
             SET total_earned = ?
             WHERE id = ?

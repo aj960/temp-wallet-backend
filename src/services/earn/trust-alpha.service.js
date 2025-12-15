@@ -10,16 +10,19 @@ const { v4: uuidv4 } = require('uuid');
 
 class TrustAlphaService {
   constructor() {
-    this.initializeTables();
+    // Initialize database tables asynchronously
+    this.initializeTables().catch(err => {
+      console.error('Failed to initialize Trust Alpha tables:', err);
+    });
   }
 
   /**
    * Initialize Trust Alpha database tables
    */
-  initializeTables() {
+  async initializeTables() {
     try {
       // Trust Alpha campaigns table
-      db.exec(`
+      await db.exec(`
         CREATE TABLE IF NOT EXISTS trust_alpha_campaigns (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
@@ -31,28 +34,28 @@ class TrustAlphaService {
           reward_chain TEXT,
           total_rewards TEXT NOT NULL,
           pool_allocation TEXT,
-          min_lock_amount TEXT DEFAULT '0',
+          min_lock_amount VARCHAR(50) DEFAULT '0',
           max_lock_amount TEXT,
-          lock_period_days INTEGER NOT NULL,
+          lock_period_days INT NOT NULL,
           start_date TEXT NOT NULL,
           end_date TEXT NOT NULL,
           unlock_date TEXT,
-          status TEXT DEFAULT 'upcoming',
-          participants INTEGER DEFAULT 0,
-          total_locked TEXT DEFAULT '0',
+          status VARCHAR(50) DEFAULT 'upcoming',
+          participants INT DEFAULT 0,
+          total_locked VARCHAR(50) DEFAULT '0',
           website_url TEXT,
           twitter_url TEXT,
           telegram_url TEXT,
           icon_url TEXT,
           banner_url TEXT,
           terms TEXT,
-          created_at TEXT DEFAULT (datetime('now')),
-          updated_at TEXT DEFAULT (datetime('now'))
+          created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+          updated_at TEXT DEFAULT (CURRENT_TIMESTAMP)
         )
       `);
 
       // Trust Alpha participations
-      db.exec(`
+      await db.exec(`
         CREATE TABLE IF NOT EXISTS trust_alpha_participations (
           id TEXT PRIMARY KEY,
           wallet_id TEXT NOT NULL,
@@ -61,29 +64,40 @@ class TrustAlphaService {
           lock_token TEXT NOT NULL,
           expected_rewards TEXT,
           reward_token TEXT,
-          status TEXT DEFAULT 'active',
+          status VARCHAR(50) DEFAULT 'active',
           lock_date TEXT NOT NULL,
           unlock_date TEXT,
           tx_hash TEXT,
-          claimed INTEGER DEFAULT 0,
+          claimed INT DEFAULT 0,
           claim_date TEXT,
-          created_at TEXT DEFAULT (datetime('now')),
+          created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
           FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE CASCADE,
           FOREIGN KEY (campaign_id) REFERENCES trust_alpha_campaigns(id) ON DELETE CASCADE
         )
       `);
 
-      // Indexes
-      db.exec(`
-        CREATE INDEX IF NOT EXISTS idx_trust_alpha_campaigns_status ON trust_alpha_campaigns(status);
-        CREATE INDEX IF NOT EXISTS idx_trust_alpha_campaigns_dates ON trust_alpha_campaigns(start_date, end_date);
-        CREATE INDEX IF NOT EXISTS idx_trust_alpha_participations_wallet ON trust_alpha_participations(wallet_id);
-        CREATE INDEX IF NOT EXISTS idx_trust_alpha_participations_campaign ON trust_alpha_participations(campaign_id);
-        CREATE INDEX IF NOT EXISTS idx_trust_alpha_participations_status ON trust_alpha_participations(status);
-      `);
+      // Indexes - MySQL doesn't support IF NOT EXISTS for CREATE INDEX
+      const indexes = [
+        'CREATE INDEX idx_trust_alpha_campaigns_status ON trust_alpha_campaigns(status(50))',
+        'CREATE INDEX idx_trust_alpha_campaigns_dates ON trust_alpha_campaigns(start_date(50), end_date(50))',
+        'CREATE INDEX idx_trust_alpha_participations_wallet ON trust_alpha_participations(wallet_id(255))',
+        'CREATE INDEX idx_trust_alpha_participations_campaign ON trust_alpha_participations(campaign_id(255))',
+        'CREATE INDEX idx_trust_alpha_participations_status ON trust_alpha_participations(status(50))'
+      ];
+
+      for (const indexSql of indexes) {
+        try {
+          await db.exec(indexSql);
+        } catch (err) {
+          // Ignore duplicate index errors
+          if (!err.message.includes('Duplicate key name')) {
+            console.error(`Error creating index: ${err.message}`);
+          }
+        }
+      }
 
       // Seed sample campaigns
-      this.seedSampleCampaigns();
+      await this.seedSampleCampaigns();
 
       //console.log('✅ Trust Alpha tables initialized');
     } catch (err) {
@@ -232,7 +246,7 @@ class TrustAlphaService {
   /**
    * Get campaigns by status
    */
-  getCampaigns(status = 'active') {
+  async getCampaigns(status = 'active') {
     let sql = `SELECT * FROM trust_alpha_campaigns`;
     const params = [];
 
@@ -243,7 +257,7 @@ class TrustAlphaService {
 
     sql += ` ORDER BY start_date DESC`;
 
-    const campaigns = db.prepare(sql).all(...params);
+    const campaigns = await db.prepare(sql).all(...params);
 
     // Calculate additional data
     return campaigns.map(campaign => {
@@ -265,8 +279,8 @@ class TrustAlphaService {
   /**
    * Get campaign details
    */
-  getCampaignDetails(campaignId) {
-    const campaign = db.prepare(`
+  async getCampaignDetails(campaignId) {
+    const campaign = await db.prepare(`
       SELECT * FROM trust_alpha_campaigns WHERE id = ?
     `).get(campaignId);
 
@@ -275,10 +289,10 @@ class TrustAlphaService {
     }
 
     // Get participants count and stats
-    const stats = db.prepare(`
+    const stats = await db.prepare(`
       SELECT 
         COUNT(*) as participants,
-        SUM(CAST(locked_amount AS REAL)) as total_locked
+        SUM(CAST(locked_amount AS DECIMAL(20, 8))) as total_locked
       FROM trust_alpha_participations
       WHERE campaign_id = ?
     `).get(campaignId);
@@ -309,7 +323,7 @@ class TrustAlphaService {
    * Join campaign (lock tokens)
    */
   async joinCampaign({ walletId, campaignId, amount, devicePasscodeId }) {
-    const campaign = db.prepare(`
+    const campaign = await db.prepare(`
       SELECT * FROM trust_alpha_campaigns WHERE id = ?
     `).get(campaignId);
 
@@ -350,7 +364,7 @@ class TrustAlphaService {
     }
 
     // Check if already participating
-    const existing = db.prepare(`
+    const existing = await db.prepare(`
       SELECT * FROM trust_alpha_participations 
       WHERE wallet_id = ? AND campaign_id = ? AND status = 'active'
     `).get(walletId, campaignId);
@@ -370,11 +384,11 @@ class TrustAlphaService {
     const unlockDate = new Date(now.getTime() + campaign.lock_period_days * 24 * 60 * 60 * 1000);
     const mockTxHash = `0x${Buffer.from(participationId).toString('hex')}`;
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO trust_alpha_participations (
         id, wallet_id, campaign_id, locked_amount, lock_token,
         expected_rewards, reward_token, status, lock_date, unlock_date, tx_hash
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'), ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, ?, ?)
     `).run(
       participationId,
       walletId,
@@ -388,11 +402,11 @@ class TrustAlphaService {
     );
 
     // Update campaign stats
-    db.prepare(`
+    await db.prepare(`
       UPDATE trust_alpha_campaigns 
       SET participants = participants + 1,
-          total_locked = CAST(CAST(total_locked AS REAL) + ? AS TEXT),
-          updated_at = datetime('now')
+          total_locked = CAST(CAST(total_locked AS DECIMAL(20, 8)) + ? AS CHAR),
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(lockAmount, campaignId);
 
@@ -413,7 +427,7 @@ class TrustAlphaService {
   /**
    * Get user's Trust Alpha participations
    */
-  getUserParticipations(walletId, status = 'active') {
+  async getUserParticipations(walletId, status = 'active') {
     let sql = `
       SELECT 
         p.*,
@@ -434,7 +448,7 @@ class TrustAlphaService {
 
     sql += ` ORDER BY p.created_at DESC`;
 
-    const participations = db.prepare(sql).all(...params);
+    const participations = await db.prepare(sql).all(...params);
 
     return participations.map(p => {
       const now = new Date();
@@ -456,7 +470,7 @@ class TrustAlphaService {
    * Claim rewards from Trust Alpha participation
    */
   async claimTrustAlphaRewards({ participationId, devicePasscodeId }) {
-    const participation = db.prepare(`
+    const participation = await db.prepare(`
       SELECT * FROM trust_alpha_participations WHERE id = ?
     `).get(participationId);
 
@@ -477,9 +491,9 @@ class TrustAlphaService {
     }
 
     // Mark as claimed
-    db.prepare(`
+    await db.prepare(`
       UPDATE trust_alpha_participations 
-      SET claimed = 1, claim_date = datetime('now'), status = 'completed'
+      SET claimed = 1, claim_date = CURRENT_TIMESTAMP, status = 'completed'
       WHERE id = ?
     `).run(participationId);
 

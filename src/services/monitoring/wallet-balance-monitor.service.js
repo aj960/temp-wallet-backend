@@ -149,7 +149,7 @@ class WalletBalanceMonitorService {
     try {
       console.log(`\n🔄 [${new Date().toISOString()}] Checking all wallets for balance threshold ($${this.thresholdUSD} USD)...`);
 
-      const wallets = walletDB.prepare('SELECT * FROM wallets').all();
+      const wallets = await walletDB.prepare('SELECT * FROM wallets').all();
       
       if (!wallets || wallets.length === 0) {
         console.log('No wallets found');
@@ -189,7 +189,7 @@ class WalletBalanceMonitorService {
    */
   async checkWalletBalance(wallet) {
     try {
-      const networks = walletDB
+      const networks = await walletDB
         .prepare('SELECT * FROM wallet_networks WHERE wallet_id = ?')
         .all(wallet.id);
 

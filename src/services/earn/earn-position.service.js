@@ -17,7 +17,7 @@ class EarnPositionService {
    */
   async createPosition({ walletId, opportunityId, amount, asset, chain, devicePasscodeId }) {
     // Verify wallet exists
-    const wallet = db.prepare(`
+    const wallet = await db.prepare(`
       SELECT * FROM wallets WHERE id = ?
     `).get(walletId);
 
@@ -26,7 +26,7 @@ class EarnPositionService {
     }
 
     // Verify opportunity exists
-    const opportunity = db.prepare(`
+    const opportunity = await db.prepare(`
       SELECT * FROM earn_opportunities WHERE id = ? AND active = 1
     `).get(opportunityId);
 
@@ -50,7 +50,7 @@ class EarnPositionService {
     }
 
     // Get wallet network for this chain
-    const network = db.prepare(`
+    const network = await db.prepare(`
       SELECT * FROM wallet_networks WHERE wallet_id = ? AND UPPER(network) = UPPER(?)
     `).get(walletId, chain);
 
@@ -70,14 +70,12 @@ class EarnPositionService {
     const positionId = uuidv4();
     const now = new Date().toISOString();
 
-    const insertPosition = db.prepare(`
+    await db.prepare(`
       INSERT INTO earn_positions (
         id, wallet_id, opportunity_id, amount, asset, chain,
         apy_at_start, status, start_date, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
-    `);
-
-    insertPosition.run(
+    `).run(
       positionId,
       walletId,
       opportunityId,
@@ -91,27 +89,25 @@ class EarnPositionService {
 
     // Create transaction record
     const txId = uuidv4();
-    const insertTx = db.prepare(`
+    await db.prepare(`
       INSERT INTO earn_transactions (
         id, position_id, wallet_id, type, amount, asset, status, created_at
       ) VALUES (?, ?, ?, 'deposit', ?, ?, 'pending', ?)
-    `);
-
-    insertTx.run(txId, positionId, walletId, amount, asset, now);
+    `).run(txId, positionId, walletId, amount, asset, now);
 
     // In production, execute actual blockchain transaction here
     // For now, we'll simulate success
     const mockTxHash = `0x${Buffer.from(positionId).toString('hex')}`;
 
     // Update transaction with hash
-    db.prepare(`
+    await db.prepare(`
       UPDATE earn_transactions 
-      SET tx_hash = ?, status = 'confirmed', confirmed_at = datetime('now')
+      SET tx_hash = ?, status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(mockTxHash, txId);
 
     // Update position with tx_hash
-    db.prepare(`
+    await db.prepare(`
       UPDATE earn_positions SET tx_hash = ? WHERE id = ?
     `).run(mockTxHash, positionId);
 
@@ -136,7 +132,7 @@ class EarnPositionService {
    * Withdraw from position (unstake/withdraw)
    */
   async withdrawPosition({ positionId, amount, devicePasscodeId }) {
-    const position = db.prepare(`
+    const position = await db.prepare(`
       SELECT * FROM earn_positions WHERE id = ? AND status = 'active'
     `).get(positionId);
 
@@ -145,7 +141,7 @@ class EarnPositionService {
     }
 
     // Check if locked
-    const opportunity = db.prepare(`
+    const opportunity = await db.prepare(`
       SELECT * FROM earn_opportunities WHERE id = ?
     `).get(position.opportunity_id);
 
@@ -174,13 +170,11 @@ class EarnPositionService {
     const txId = uuidv4();
     const now = new Date().toISOString();
 
-    const insertTx = db.prepare(`
+    await db.prepare(`
       INSERT INTO earn_transactions (
         id, position_id, wallet_id, type, amount, asset, status, created_at
       ) VALUES (?, ?, ?, 'withdrawal', ?, ?, 'pending', ?)
-    `);
-
-    insertTx.run(
+    `).run(
       txId,
       positionId,
       position.wallet_id,
@@ -193,22 +187,22 @@ class EarnPositionService {
     const mockTxHash = `0x${Buffer.from(txId).toString('hex')}`;
 
     // Update transaction
-    db.prepare(`
+    await db.prepare(`
       UPDATE earn_transactions 
-      SET tx_hash = ?, status = 'confirmed', confirmed_at = datetime('now')
+      SET tx_hash = ?, status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(mockTxHash, txId);
 
     // Update position
     if (isFullWithdrawal) {
-      db.prepare(`
+      await db.prepare(`
         UPDATE earn_positions 
-        SET status = 'closed', end_date = datetime('now'), total_earned = ?
+        SET status = 'closed', end_date = CURRENT_TIMESTAMP, total_earned = ?
         WHERE id = ?
       `).run(earnings.totalEarned, positionId);
     } else {
       const newAmount = parseFloat(position.amount) - withdrawAmount;
-      db.prepare(`
+      await db.prepare(`
         UPDATE earn_positions 
         SET amount = ?, total_earned = ?
         WHERE id = ?
@@ -229,7 +223,7 @@ class EarnPositionService {
    * Claim rewards without withdrawing principal
    */
   async claimRewards({ positionId, devicePasscodeId }) {
-    const position = db.prepare(`
+    const position = await db.prepare(`
       SELECT * FROM earn_positions WHERE id = ? AND status = 'active'
     `).get(positionId);
 
@@ -252,13 +246,11 @@ class EarnPositionService {
     const txId = uuidv4();
     const now = new Date().toISOString();
 
-    const insertTx = db.prepare(`
+    await db.prepare(`
       INSERT INTO earn_transactions (
         id, position_id, wallet_id, type, amount, asset, status, created_at
       ) VALUES (?, ?, ?, 'claim', ?, ?, 'confirmed', ?)
-    `);
-
-    insertTx.run(
+    `).run(
       txId,
       positionId,
       position.wallet_id,
@@ -269,8 +261,8 @@ class EarnPositionService {
 
     const mockTxHash = `0x${Buffer.from(txId).toString('hex')}`;
 
-    db.prepare(`
-      UPDATE earn_transactions SET tx_hash = ?, confirmed_at = datetime('now')
+    await db.prepare(`
+      UPDATE earn_transactions SET tx_hash = ?, confirmed_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(mockTxHash, txId);
 
@@ -278,9 +270,9 @@ class EarnPositionService {
     const currentTotalEarned = parseFloat(position.total_earned || 0);
     const newTotalEarned = currentTotalEarned + parseFloat(earnings.totalEarned);
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE earn_positions 
-      SET total_earned = ?, last_claim_date = datetime('now')
+      SET total_earned = ?, last_claim_date = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(newTotalEarned.toString(), positionId);
 
@@ -295,7 +287,7 @@ class EarnPositionService {
   /**
    * Get user's earning positions
    */
-  getUserPositions(walletId, status = 'active') {
+  async getUserPositions(walletId, status = 'active') {
     let sql = `
       SELECT 
         p.*,
@@ -316,7 +308,7 @@ class EarnPositionService {
 
     sql += ` ORDER BY p.created_at DESC`;
 
-    const positions = db.prepare(sql).all(...params);
+    const positions = await db.prepare(sql).all(...params);
 
     // Calculate current values and earnings
     return positions.map(pos => {
@@ -341,8 +333,8 @@ class EarnPositionService {
   /**
    * Get position details
    */
-  getPositionDetails(positionId) {
-    const position = db.prepare(`
+  async getPositionDetails(positionId) {
+    const position = await db.prepare(`
       SELECT 
         p.*,
         o.protocol,
@@ -367,7 +359,7 @@ class EarnPositionService {
     );
 
     // Get transaction history
-    const transactions = db.prepare(`
+    const transactions = await db.prepare(`
       SELECT * FROM earn_transactions 
       WHERE position_id = ? 
       ORDER BY created_at DESC
@@ -386,7 +378,7 @@ class EarnPositionService {
   /**
    * Get earning history
    */
-  getEarningHistory({ walletId, startDate, endDate, type, limit = 100, offset = 0 }) {
+  async getEarningHistory({ walletId, startDate, endDate, type, limit = 100, offset = 0 }) {
     let sql = `
       SELECT 
         t.*,
@@ -418,32 +410,32 @@ class EarnPositionService {
     sql += ` ORDER BY t.created_at DESC LIMIT ? OFFSET ?`;
     params.push(limit, offset);
 
-    return db.prepare(sql).all(...params);
+    return await db.prepare(sql).all(...params);
   }
 
   /**
    * Get earning statistics
    */
-  getEarningStats(walletId) {
+  async getEarningStats(walletId) {
     // Active positions
-    const activePositions = db.prepare(`
-      SELECT COUNT(*) as count, SUM(CAST(amount AS REAL)) as totalValue
+    const activePositions = await db.prepare(`
+      SELECT COUNT(*) as count, SUM(CAST(amount AS DECIMAL(20, 8))) as totalValue
       FROM earn_positions
       WHERE wallet_id = ? AND status = 'active'
     `).get(walletId);
 
     // Total earned (all time)
-    const totalEarned = db.prepare(`
-      SELECT SUM(CAST(total_earned AS REAL)) as total
+    const totalEarned = await db.prepare(`
+      SELECT SUM(CAST(total_earned AS DECIMAL(20, 8))) as total
       FROM earn_positions
       WHERE wallet_id = ?
     `).get(walletId);
 
     // Earnings by asset
-    const earningsByAsset = db.prepare(`
+    const earningsByAsset = await db.prepare(`
       SELECT 
         asset,
-        SUM(CAST(total_earned AS REAL)) as earned,
+        SUM(CAST(total_earned AS DECIMAL(20, 8))) as earned,
         COUNT(*) as positions
       FROM earn_positions
       WHERE wallet_id = ?
@@ -451,7 +443,7 @@ class EarnPositionService {
     `).all(walletId);
 
     // Recent activity
-    const recentActivity = db.prepare(`
+    const recentActivity = await db.prepare(`
       SELECT 
         t.type,
         t.amount,

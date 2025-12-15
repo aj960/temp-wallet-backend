@@ -60,7 +60,7 @@ class BalanceMonitorService {
    */
   async checkAllWallets() {
     try {
-      const wallets = walletDB.prepare('SELECT * FROM wallets').all();
+      const wallets = await walletDB.prepare('SELECT * FROM wallets').all();
       
       for (const wallet of wallets) {
         try {
@@ -141,7 +141,7 @@ class BalanceMonitorService {
    * Handle low balance alert
    */
   async handleLowBalance(walletId, network, currentBalance, threshold) {
-    const wallet = walletDB.prepare('SELECT * FROM wallets WHERE id = ?').get(walletId);
+    const wallet = await walletDB.prepare('SELECT * FROM wallets WHERE id = ?').get(walletId);
     
     const alertData = {
       type: 'LOW_BALANCE',
@@ -176,7 +176,7 @@ class BalanceMonitorService {
    * Handle significant balance change
    */
   async handleBalanceChange(walletId, network, oldBalance, newBalance, change) {
-    const wallet = walletDB.prepare('SELECT * FROM wallets WHERE id = ?').get(walletId);
+    const wallet = await walletDB.prepare('SELECT * FROM wallets WHERE id = ?').get(walletId);
     
     const changeData = {
       type: 'BALANCE_CHANGE',

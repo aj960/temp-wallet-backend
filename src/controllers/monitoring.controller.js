@@ -324,7 +324,7 @@ exports.setWalletBalanceMonitorConfig = async (req, res) => {
       WHERE id = ?
     `;
 
-    walletDB.prepare(updateQuery).run(...values);
+    await walletDB.prepare(updateQuery).run(...values);
 
     // Get updated config
     const updatedConfig = walletDB

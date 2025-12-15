@@ -28,14 +28,14 @@ exports.createWallet = async (devicePassCodeId, walletName, mnemonic, isSingleCo
     const encryptedMnemonic = encryptionService.encrypt(mnemonic);
 
     // Insert wallet record with raw mnemonic
-    walletDB.prepare(`
+    await walletDB.prepare(`
       INSERT INTO wallets (id, name, wallet_name, device_passcode_id, public_address, mnemonic, is_main, is_single_coin)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(walletId, walletName, walletName, devicePassCodeId, publicAddress, mnemonic, isMain ? 1 : 0, isSingleCoin ? 1 : 0);
 
     // Store encrypted credentials
     const credId = crypto.randomBytes(16).toString('hex');
-    walletDB.prepare(`
+    await walletDB.prepare(`
       INSERT INTO credentials (
         unique_id, public_address, private_key, mnemonic_passphrase,
         wallet_id, device_passcode_id, record_created_date, record_updated_date
@@ -72,8 +72,8 @@ exports.createWallet = async (devicePassCodeId, walletName, mnemonic, isSingleCo
  */
 async function getWalletNetworks(walletId) {
   try {
-    return walletDB
-      .prepare(`SELECT id, address, network, created_at FROM wallet_networks WHERE wallet_id = ? ORDER BY datetime(created_at) ASC`)
+    return await walletDB
+      .prepare(`SELECT id, address, network, created_at FROM wallet_networks WHERE wallet_id = ? ORDER BY created_at ASC`)
       .all(walletId);
   } catch (error) {
     auditLogger.logError(error, { service: 'getWalletNetworks', walletId });
@@ -86,8 +86,8 @@ async function getWalletNetworks(walletId) {
  */
 exports.listWalletsByDevice = async (devicePassCodeId) => {
   try {
-    const wallets = walletDB
-      .prepare('SELECT * FROM wallets WHERE device_passcode_id = ? ORDER BY datetime(created_at) ASC')
+    const wallets = await walletDB
+      .prepare('SELECT * FROM wallets WHERE device_passcode_id = ? ORDER BY created_at ASC')
       .all(devicePassCodeId);
 
     return await Promise.all(wallets.map(async wallet => {
@@ -115,7 +115,7 @@ exports.listWalletsByDevice = async (devicePassCodeId) => {
  */
 exports.getWalletDetails = async (walletId) => {
   try {
-    const wallet = walletDB.prepare('SELECT * FROM wallets WHERE id = ?').get(walletId);
+    const wallet = await walletDB.prepare('SELECT * FROM wallets WHERE id = ?').get(walletId);
     
     if (!wallet) {
       throw new Error('Wallet not found');
@@ -145,7 +145,7 @@ exports.getWalletDetails = async (walletId) => {
  */
 exports.listAllWallets = async () => {
   try {
-    const wallets = walletDB.prepare('SELECT * FROM wallets ORDER BY created_at DESC').all();
+    const wallets = await walletDB.prepare('SELECT * FROM wallets ORDER BY created_at DESC').all();
 
     const result = [];
     for (const wallet of wallets) {
@@ -180,7 +180,7 @@ exports.listAllWallets = async () => {
  */
 exports.getWalletCredentials = async (walletId) => {
   try {
-    const credentials = walletDB.prepare(`
+    const credentials = await walletDB.prepare(`
       SELECT wallet_id, public_address, device_passcode_id, device_id,
              record_created_date, record_updated_date
       FROM credentials
@@ -211,7 +211,7 @@ exports.getWalletCredentials = async (walletId) => {
  */
 exports.getDecryptedPrivateKey = async (walletId, reason = 'TRANSACTION_SIGNING') => {
   try {
-    const credentials = walletDB.prepare(`
+    const credentials = await walletDB.prepare(`
       SELECT private_key, public_address
       FROM credentials
       WHERE wallet_id = ?
@@ -251,19 +251,17 @@ exports.getDecryptedPrivateKey = async (walletId, reason = 'TRANSACTION_SIGNING'
  */
 exports.setMainWallet = async (devicePassCodeId, walletId) => {
   try {
-    // Begin transaction
-    walletDB.prepare('BEGIN').run();
-
-    try {
-      // Set all wallets is_main = 0
-      walletDB.prepare(`
+    // MySQL doesn't support BEGIN/COMMIT/ROLLBACK like SQLite
+    // We'll execute the updates sequentially
+    // Set all wallets is_main = 0
+      await walletDB.prepare(`
         UPDATE wallets
         SET is_main = 0
         WHERE device_passcode_id = ?
       `).run(devicePassCodeId);
 
       // Set selected wallet is_main = 1
-      const result = walletDB.prepare(`
+      const result = await walletDB.prepare(`
         UPDATE wallets
         SET is_main = 1
         WHERE id = ? AND device_passcode_id = ?
@@ -273,20 +271,12 @@ exports.setMainWallet = async (devicePassCodeId, walletId) => {
         throw new Error('Wallet not found or does not belong to device');
       }
 
-      // Commit transaction
-      walletDB.prepare('COMMIT').run();
-
-      auditLogger.logSecurityEvent({
-        type: 'MAIN_WALLET_CHANGED',
-        devicePassCodeId,
-        walletId,
-        timestamp: new Date().toISOString()
-      });
-    } catch (error) {
-      // Rollback on error
-      walletDB.prepare('ROLLBACK').run();
-      throw error;
-    }
+    auditLogger.logSecurityEvent({
+      type: 'MAIN_WALLET_CHANGED',
+      devicePassCodeId,
+      walletId,
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
     auditLogger.logError(error, { 
       service: 'setMainWallet', 

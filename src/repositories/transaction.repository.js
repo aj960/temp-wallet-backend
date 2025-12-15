@@ -11,7 +11,7 @@ class TransactionRepository {
   /**
    * Create new transaction record
    */
-  create(txData) {
+  async create(txData) {
     const {
       id,
       walletId,
@@ -32,7 +32,7 @@ class TransactionRepository {
       createdAt
     } = txData;
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO transactions (
         id, wallet_id, network, tx_hash, from_address, to_address,
         amount, token_address, token_symbol, tx_type, status,
@@ -44,14 +44,14 @@ class TransactionRepository {
       blockNumber, gasUsed, gasPrice, txFee, createdAt
     );
 
-    return this.findById(id);
+    return await this.findById(id);
   }
 
   /**
    * Find transaction by ID
    */
-  findById(txId) {
-    return db.prepare(`
+  async findById(txId) {
+    return await db.prepare(`
       SELECT * FROM transactions WHERE id = ?
     `).get(txId);
   }
@@ -59,8 +59,8 @@ class TransactionRepository {
   /**
    * Find transaction by hash
    */
-  findByHash(txHash) {
-    return db.prepare(`
+  async findByHash(txHash) {
+    return await db.prepare(`
       SELECT * FROM transactions WHERE tx_hash = ?
     `).get(txHash);
   }
@@ -68,7 +68,7 @@ class TransactionRepository {
   /**
    * Find transactions by wallet
    */
-  findByWallet(walletId, filters = {}) {
+  async findByWallet(walletId, filters = {}) {
     const { chainId, status, txType, limit = 50, offset = 0 } = filters;
 
     let query = 'SELECT * FROM transactions WHERE wallet_id = ?';
@@ -92,13 +92,13 @@ class TransactionRepository {
     query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
 
-    return db.prepare(query).all(...params);
+    return await db.prepare(query).all(...params);
   }
 
   /**
    * Update transaction
    */
-  update(txId, updates) {
+  async update(txId, updates) {
     const fields = [];
     const values = [];
 
@@ -109,17 +109,17 @@ class TransactionRepository {
 
     values.push(txId);
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE transactions SET ${fields.join(', ')} WHERE id = ?
     `).run(...values);
 
-    return this.findById(txId);
+    return await this.findById(txId);
   }
 
   /**
    * Get transaction statistics
    */
-  getStats(walletId, chainId = null) {
+  async getStats(walletId, chainId = null) {
     let query = `
       SELECT 
         COUNT(*) as total,
@@ -139,17 +139,17 @@ class TransactionRepository {
       params.push(chainId.toUpperCase());
     }
 
-    return db.prepare(query).get(...params);
+    return await db.prepare(query).get(...params);
   }
 
   /**
    * Delete old pending transactions (cleanup)
    */
-  deleteOldPending(daysOld = 7) {
+  async deleteOldPending(daysOld = 7) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - daysOld);
 
-    db.prepare(`
+    await db.prepare(`
       DELETE FROM transactions
       WHERE status = 'pending'
       AND created_at < ?

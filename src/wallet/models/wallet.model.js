@@ -5,12 +5,12 @@ const crypto = require('crypto');
 const generateId = () => crypto.randomBytes(16).toString('hex');
 
 class WalletModel {
-  static create({ name, passcode }) {
+  static async create({ name, passcode }) {
     // Mark old wallets for the same device as obsolete
-    db.prepare(`UPDATE wallets SET is_old = 1 WHERE name = ?`).run(name);
+    await db.prepare(`UPDATE wallets SET is_old = 1 WHERE name = ?`).run(name);
 
     const id = generateId();
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO wallets (id, name, passcode, is_old, is_biometric_enabled)
       VALUES (?, ?, ?, 0, 0)
     `).run(id, name, passcode);
@@ -18,21 +18,21 @@ class WalletModel {
     return { id, name };
   }
 
-  static findAll() {
-    return db.prepare(`SELECT * FROM wallets ORDER BY created_at DESC`).all();
+  static async findAll() {
+    return await db.prepare(`SELECT * FROM wallets ORDER BY created_at DESC`).all();
   }
 
-  static findById(id) {
-    return db.prepare(`SELECT * FROM wallets WHERE id = ?`).get(id);
+  static async findById(id) {
+    return await db.prepare(`SELECT * FROM wallets WHERE id = ?`).get(id);
   }
 
-  static findActiveByName(name) {
-    return db.prepare(`
+  static async findActiveByName(name) {
+    return await db.prepare(`
       SELECT * FROM wallets WHERE name = ? AND is_old = 0
     `).get(name);
   }
 
-  static update(id, { name, passcode, isBiometricEnabled }) {
+  static async update(id, { name, passcode, isBiometricEnabled }) {
     let updates = [];
     let params = [];
 
@@ -47,16 +47,17 @@ class WalletModel {
 
     const query = `UPDATE wallets SET ${updates.join(', ')} WHERE id = ?`;
     params.push(id);
-    const result = db.prepare(query).run(...params);
+    const result = await db.prepare(query).run(...params);
     return result.changes > 0;
   }
 
-  static delete(id) {
-    return db.prepare(`DELETE FROM wallets WHERE id = ?`).run(id).changes > 0;
+  static async delete(id) {
+    const result = await db.prepare(`DELETE FROM wallets WHERE id = ?`).run(id);
+    return result.changes > 0;
   }
 
-  static updateBiometric(name, isEnabled) {
-    const result = db.prepare(`
+  static async updateBiometric(name, isEnabled) {
+    const result = await db.prepare(`
       UPDATE wallets SET is_biometric_enabled = ? 
       WHERE name = ? AND is_old = 0
     `).run(isEnabled ? 1 : 0, name);

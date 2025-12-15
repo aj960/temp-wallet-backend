@@ -56,7 +56,7 @@ exports.loginAdmin = async (req, res) => {
       return error(res, 'Email and password required');
     }
 
-    const admin = db.prepare('SELECT * FROM admins WHERE email = ?').get(email);
+    const admin = await db.prepare('SELECT * FROM admins WHERE email = ?').get(email);
     
     if (!admin) {
       auditLogger.logAuthAttempt({
@@ -121,7 +121,7 @@ exports.refreshToken = async (req, res) => {
 
     const decoded = jwtService.verifyRefreshToken(refreshToken);
     
-    const admin = db.prepare('SELECT id, email, role FROM admins WHERE id = ?').get(decoded.id);
+    const admin = await db.prepare('SELECT id, email, role FROM admins WHERE id = ?').get(decoded.id);
     
     if (!admin) {
       return error(res, 'Admin not found');
@@ -136,10 +136,10 @@ exports.refreshToken = async (req, res) => {
   }
 };
 
-exports.getAdminProfile = (req, res) => {
+exports.getAdminProfile = async (req, res) => {
   try {
     const { id } = req.params;
-    const admin = db.prepare('SELECT id, name, email, role, created_at FROM admins WHERE id = ?').get(id);
+    const admin = await db.prepare('SELECT id, name, email, role, created_at FROM admins WHERE id = ?').get(id);
     
     if (!admin) {
       return error(res, 'Admin not found');
@@ -152,9 +152,9 @@ exports.getAdminProfile = (req, res) => {
   }
 };
 
-exports.listAdmins = (req, res) => {
+exports.listAdmins = async (req, res) => {
   try {
-    const admins = db.prepare('SELECT id, name, email, role, created_at FROM admins').all();
+    const admins = await db.prepare('SELECT id, name, email, role, created_at FROM admins').all();
     success(res, admins);
   } catch (e) {
     auditLogger.logError(e, { controller: 'listAdmins' });
@@ -162,11 +162,11 @@ exports.listAdmins = (req, res) => {
   }
 };
 
-exports.deleteAdmin = (req, res) => {
+exports.deleteAdmin = async (req, res) => {
   try {
     const { id } = req.params;
     
-    db.prepare('DELETE FROM admins WHERE id = ?').run(id);
+    await db.prepare('DELETE FROM admins WHERE id = ?').run(id);
     
     auditLogger.logSecurityEvent({
       type: 'ADMIN_DELETED',
@@ -211,11 +211,11 @@ exports.getAllWallets = (req, res) => {
   }
 };
 
-exports.getWalletById = (req, res) => {
+exports.getWalletById = async (req, res) => {
   try {
     const { id } = req.params;
     // ✅ Now using centralized db
-    const wallet = db.prepare(`
+    const wallet = await db.prepare(`
       SELECT 
         id,
         name,
@@ -272,7 +272,7 @@ exports.getWalletSeedPhrase = async (req, res) => {
     });
     
     // ✅ Get wallet info from centralized db
-    const wallet = db.prepare('SELECT * FROM wallets WHERE id = ?').get(id);
+    const wallet = await db.prepare('SELECT * FROM wallets WHERE id = ?').get(id);
     
     if (!wallet) {
       return error(res, 'Wallet not found');

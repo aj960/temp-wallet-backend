@@ -19,11 +19,15 @@ function getDB() {
         try {
           db = require('../../db/index');
         } catch (e2) {
-          // Fallback: create direct connection
-          const Database = require('better-sqlite3');
-          const path = require('path');
-          const dbPath = path.join(__dirname, '../../data/wallets.db');
-          db = new Database(dbPath);
+          // Fallback: use MySQL wrapper if available
+          const MySQLWrapper = require('../../db/mysql-wrapper');
+          const mysqlConfig = {
+            host: process.env.DB_HOST || 'localhost',
+            user: process.env.DB_USER || 'app_user',
+            password: process.env.DB_PASSWORD || 'qwe123QWE!@#',
+            database: process.env.DB_NAME || 'wallet_db'
+          };
+          db = new MySQLWrapper(mysqlConfig);
         }
       }
     } catch (error) {
@@ -130,7 +134,12 @@ exports.verifyDevicePasscode = async (devicePassCodeId, passcode) => {
   try {
     const database = getDB();
     
-    const device = database.prepare(`
+    // Ensure database is ready
+    if (database.waitForReady) {
+      await database.waitForReady();
+    }
+    
+    const device = await database.prepare(`
       SELECT passcode 
       FROM device_passcodes 
       WHERE id = ? AND is_old = 0

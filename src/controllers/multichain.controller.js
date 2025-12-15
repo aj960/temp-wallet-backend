@@ -35,7 +35,7 @@ exports.createMultichainWallet = async (req, res) => {
     }
 
     // Verify device passcode exists and get passcode for encryption
-    const device = db.prepare(`
+    const device = await db.prepare(`
       SELECT id, passcode 
       FROM device_passcodes 
       WHERE id = ?
@@ -108,51 +108,47 @@ exports.createMultichainWallet = async (req, res) => {
         backup_status,
         created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, 0, 0, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP)
     `);
 
     const insertNetwork = db.prepare(`
       INSERT INTO wallet_networks (id, wallet_id, network, address, created_at)
-      VALUES (?, ?, ?, ?, datetime('now'))
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
     `);
 
     const insertEncryptedMnemonic = db.prepare(`
       INSERT INTO encrypted_mnemonics (wallet_id, encrypted_mnemonic, encryption_method, created_at)
-      VALUES (?, ?, 'aes-256-gcm', datetime('now'))
+      VALUES (?, ?, 'aes-256-gcm', CURRENT_TIMESTAMP)
     `);
 
-    // Execute transaction
+    // MySQL doesn't support transactions like SQLite, execute sequentially
     try {
-      const transaction = db.transaction(() => {
-        // Insert wallet with raw mnemonic
-        const walletResult = insertWallet.run(
+      // Insert wallet with raw mnemonic
+      const walletResult = await insertWallet.run(
+        walletId,
+        walletName,
+        primaryAddress,
+        devicePassCodeId,
+        mnemonic, // Store raw mnemonic
+        isMain ? 1 : 0
+      );
+
+      if (walletResult.changes === 0) {
+        throw new Error('Failed to insert wallet');
+      }
+
+      // Insert all networks
+      for (const network of generatedNetworks) {
+        await insertNetwork.run(
+          network.id,
           walletId,
-          walletName,
-          primaryAddress,
-          devicePassCodeId,
-          mnemonic, // Store raw mnemonic
-          isMain ? 1 : 0
+          network.chain,
+          network.address
         );
+      }
 
-        if (walletResult.changes === 0) {
-          throw new Error('Failed to insert wallet');
-        }
-
-        // Insert all networks
-        for (const network of generatedNetworks) {
-          insertNetwork.run(
-            network.id,
-            walletId,
-            network.chain,
-            network.address
-          );
-        }
-
-        // Insert encrypted mnemonic for backup
-        insertEncryptedMnemonic.run(walletId, encryptedMnemonic);
-      });
-
-      transaction();
+      // Insert encrypted mnemonic for backup
+      await insertEncryptedMnemonic.run(walletId, encryptedMnemonic);
     } catch (dbError) {
       console.error('Database error creating wallet:', dbError);
       throw new Error(`Failed to create wallet: ${dbError.message}`);
@@ -218,7 +214,7 @@ exports.getMultiChainBalances = async (req, res) => {
   try {
     const { walletId } = req.params;
 
-    const networks = db
+    const networks = await db
       .prepare('SELECT * FROM wallet_networks WHERE wallet_id = ?')
       .all(walletId);
 
@@ -591,7 +587,7 @@ exports.getWalletSummary = async (req, res) => {
   try {
     const { walletId } = req.params;
 
-    const wallet = db
+    const wallet = await db
       .prepare('SELECT * FROM wallets WHERE id = ?')
       .get(walletId);
 
@@ -599,7 +595,7 @@ exports.getWalletSummary = async (req, res) => {
       return error(res, 'Wallet not found');
     }
 
-    const networks = db
+    const networks = await db
       .prepare('SELECT * FROM wallet_networks WHERE wallet_id = ? ORDER BY created_at ASC')
       .all(walletId);
 

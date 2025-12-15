@@ -1,4 +1,4 @@
-const db = require('../db/devicePasscodes.db');
+const db = require('../db/index');
 const authService = require('../security/auth.service');
 const auditLogger = require('../security/audit-logger.service');
 const { success, error } = require('../utils/response');
@@ -171,7 +171,7 @@ exports.updateDevicePassCode = async (req, res) => {
     query += updates.join(', ') + ' WHERE id = ?';
     params.push(id);
 
-    const info = db.prepare(query).run(...params);
+    const info = await db.prepare(query).run(...params);
 
     if (info.changes === 0) {
       return error(res, 'Device passcode not found or no changes made');

@@ -23,42 +23,44 @@ class EarnService {
       stakingRewards: 'https://api.stakingrewards.com/public/v1'
     };
 
-    // Initialize database tables
-    this.initializeTables();
+    // Initialize database tables asynchronously
+    this.initializeTables().catch(err => {
+      console.error('Failed to initialize earn tables:', err);
+    });
   }
 
   /**
    * Initialize earn-related database tables
    */
-  initializeTables() {
+  async initializeTables() {
     try {
       // Earning opportunities table
-      db.exec(`
+      await db.exec(`
         CREATE TABLE IF NOT EXISTS earn_opportunities (
           id TEXT PRIMARY KEY,
           type TEXT NOT NULL,
           protocol TEXT NOT NULL,
           asset TEXT NOT NULL,
           chain TEXT NOT NULL,
-          apy REAL NOT NULL,
+          apy DECIMAL(20, 8) NOT NULL,
           tvl TEXT,
-          min_amount TEXT DEFAULT '0',
+          min_amount VARCHAR(50) DEFAULT '0',
           max_amount TEXT,
-          lock_period INTEGER DEFAULT 0,
-          risk_level TEXT DEFAULT 'medium',
-          verified INTEGER DEFAULT 1,
-          active INTEGER DEFAULT 1,
+          lock_period INT DEFAULT 0,
+          risk_level VARCHAR(50) DEFAULT 'medium',
+          verified INT DEFAULT 1,
+          active INT DEFAULT 1,
           protocol_url TEXT,
           icon_url TEXT,
           description TEXT,
           terms TEXT,
-          updated_at TEXT DEFAULT (datetime('now')),
-          created_at TEXT DEFAULT (datetime('now'))
+          updated_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+          created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
         )
       `);
 
       // User earning positions
-      db.exec(`
+      await db.exec(`
         CREATE TABLE IF NOT EXISTS earn_positions (
           id TEXT PRIMARY KEY,
           wallet_id TEXT NOT NULL,
@@ -66,21 +68,21 @@ class EarnService {
           amount TEXT NOT NULL,
           asset TEXT NOT NULL,
           chain TEXT NOT NULL,
-          apy_at_start REAL NOT NULL,
-          status TEXT DEFAULT 'active',
-          total_earned TEXT DEFAULT '0',
+          apy_at_start DECIMAL(20, 8) NOT NULL,
+          status VARCHAR(50) DEFAULT 'active',
+          total_earned VARCHAR(50) DEFAULT '0',
           last_claim_date TEXT,
           start_date TEXT NOT NULL,
           end_date TEXT,
           tx_hash TEXT,
-          created_at TEXT DEFAULT (datetime('now')),
+          created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
           FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE CASCADE,
           FOREIGN KEY (opportunity_id) REFERENCES earn_opportunities(id)
         )
       `);
 
       // Earning history/transactions
-      db.exec(`
+      await db.exec(`
         CREATE TABLE IF NOT EXISTS earn_transactions (
           id TEXT PRIMARY KEY,
           position_id TEXT NOT NULL,
@@ -89,8 +91,8 @@ class EarnService {
           amount TEXT NOT NULL,
           asset TEXT NOT NULL,
           tx_hash TEXT,
-          status TEXT DEFAULT 'pending',
-          created_at TEXT DEFAULT (datetime('now')),
+          status VARCHAR(50) DEFAULT 'pending',
+          created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
           confirmed_at TEXT,
           FOREIGN KEY (position_id) REFERENCES earn_positions(id) ON DELETE CASCADE,
           FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE CASCADE
@@ -98,31 +100,40 @@ class EarnService {
       `);
 
       // APY history for tracking
-      db.exec(`
+      await db.exec(`
         CREATE TABLE IF NOT EXISTS earn_apy_history (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          id INT AUTO_INCREMENT PRIMARY KEY,
           opportunity_id TEXT NOT NULL,
-          apy REAL NOT NULL,
-          recorded_at TEXT DEFAULT (datetime('now')),
+          apy DECIMAL(20, 8) NOT NULL,
+          recorded_at TEXT DEFAULT (CURRENT_TIMESTAMP),
           FOREIGN KEY (opportunity_id) REFERENCES earn_opportunities(id) ON DELETE CASCADE
         )
       `);
 
-      // Indexes
-      db.exec(`
-        CREATE INDEX IF NOT EXISTS idx_earn_opportunities_type ON earn_opportunities(type);
-        CREATE INDEX IF NOT EXISTS idx_earn_opportunities_chain ON earn_opportunities(chain);
-        CREATE INDEX IF NOT EXISTS idx_earn_opportunities_asset ON earn_opportunities(asset);
-        CREATE INDEX IF NOT EXISTS idx_earn_opportunities_active ON earn_opportunities(active);
-        
-        CREATE INDEX IF NOT EXISTS idx_earn_positions_wallet ON earn_positions(wallet_id);
-        CREATE INDEX IF NOT EXISTS idx_earn_positions_status ON earn_positions(status);
-        CREATE INDEX IF NOT EXISTS idx_earn_positions_opportunity ON earn_positions(opportunity_id);
-        
-        CREATE INDEX IF NOT EXISTS idx_earn_transactions_position ON earn_transactions(position_id);
-        CREATE INDEX IF NOT EXISTS idx_earn_transactions_wallet ON earn_transactions(wallet_id);
-        CREATE INDEX IF NOT EXISTS idx_earn_transactions_status ON earn_transactions(status);
-      `);
+      // Indexes - MySQL doesn't support IF NOT EXISTS for CREATE INDEX
+      const indexes = [
+        'CREATE INDEX idx_earn_opportunities_type ON earn_opportunities(type(50))',
+        'CREATE INDEX idx_earn_opportunities_chain ON earn_opportunities(chain(50))',
+        'CREATE INDEX idx_earn_opportunities_asset ON earn_opportunities(asset(50))',
+        'CREATE INDEX idx_earn_opportunities_active ON earn_opportunities(active)',
+        'CREATE INDEX idx_earn_positions_wallet ON earn_positions(wallet_id(255))',
+        'CREATE INDEX idx_earn_positions_status ON earn_positions(status(50))',
+        'CREATE INDEX idx_earn_positions_opportunity ON earn_positions(opportunity_id(255))',
+        'CREATE INDEX idx_earn_transactions_position ON earn_transactions(position_id(255))',
+        'CREATE INDEX idx_earn_transactions_wallet ON earn_transactions(wallet_id(255))',
+        'CREATE INDEX idx_earn_transactions_status ON earn_transactions(status(50))'
+      ];
+
+      for (const indexSql of indexes) {
+        try {
+          await db.exec(indexSql);
+        } catch (err) {
+          // Ignore duplicate index errors
+          if (!err.message.includes('Duplicate key name')) {
+            console.error(`Error creating index: ${err.message}`);
+          }
+        }
+      }
 
       //console.log('✅ Earn database tables initialized');
     } catch (err) {
@@ -166,12 +177,12 @@ class EarnService {
     sql += ` ORDER BY apy DESC LIMIT ?`;
     params.push(limit);
 
-    const opportunities = db.prepare(sql).all(...params);
+    const opportunities = await db.prepare(sql).all(...params);
 
     // If database is empty or stale, fetch from APIs
     if (opportunities.length === 0 || this.shouldRefresh()) {
       await this.refreshOpportunities();
-      return db.prepare(sql).all(...params);
+      return await db.prepare(sql).all(...params);
     }
 
     return opportunities;
@@ -197,12 +208,12 @@ class EarnService {
 
     sql += ` ORDER BY apy DESC`;
 
-    let results = db.prepare(sql).all(...params);
+    let results = await db.prepare(sql).all(...params);
 
     // Fetch from APIs if empty
     if (results.length === 0) {
       await this.refreshStablecoinRates();
-      results = db.prepare(sql).all(...params);
+      results = await db.prepare(sql).all(...params);
     }
 
     return results;
@@ -233,12 +244,12 @@ class EarnService {
 
     sql += ` ORDER BY apy DESC`;
 
-    let results = db.prepare(sql).all(...params);
+    let results = await db.prepare(sql).all(...params);
 
     // Fetch from APIs if empty
     if (results.length === 0) {
       await this.refreshStakingRates();
-      results = db.prepare(sql).all(...params);
+      results = await db.prepare(sql).all(...params);
     }
 
     return results;
@@ -504,39 +515,53 @@ class EarnService {
       return 0;
     }
 
-    const insertStmt = db.prepare(`
-      INSERT OR REPLACE INTO earn_opportunities (
-        id, type, protocol, asset, chain, apy, tvl, min_amount, max_amount,
-        lock_period, risk_level, verified, active, protocol_url, icon_url,
-        description, terms, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `);
-
-    const transaction = db.transaction((opps) => {
-      for (const opp of opps) {
-        insertStmt.run(
-          opp.id,
-          opp.type || type,
-          opp.protocol,
-          opp.asset,
-          opp.chain,
-          opp.apy,
-          opp.tvl || '0',
-          opp.min_amount || '0',
-          opp.max_amount || null,
-          opp.lock_period || 0,
-          opp.risk_level || 'medium',
-          opp.verified !== undefined ? opp.verified : 1,
-          opp.active !== undefined ? opp.active : 1,
-          opp.protocol_url || null,
-          opp.icon_url || null,
-          opp.description || null,
-          opp.terms || null
-        );
-      }
-    });
-
-    transaction(opportunities);
+    // MySQL doesn't support INSERT OR REPLACE, use INSERT ... ON DUPLICATE KEY UPDATE
+    for (const opp of opportunities) {
+      await db.prepare(`
+        INSERT INTO earn_opportunities (
+          id, type, protocol, asset, chain, apy, tvl, min_amount, max_amount,
+          lock_period, risk_level, verified, active, protocol_url, icon_url,
+          description, terms, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON DUPLICATE KEY UPDATE
+          type = VALUES(type),
+          protocol = VALUES(protocol),
+          asset = VALUES(asset),
+          chain = VALUES(chain),
+          apy = VALUES(apy),
+          tvl = VALUES(tvl),
+          min_amount = VALUES(min_amount),
+          max_amount = VALUES(max_amount),
+          lock_period = VALUES(lock_period),
+          risk_level = VALUES(risk_level),
+          verified = VALUES(verified),
+          active = VALUES(active),
+          protocol_url = VALUES(protocol_url),
+          icon_url = VALUES(icon_url),
+          description = VALUES(description),
+          terms = VALUES(terms),
+          updated_at = CURRENT_TIMESTAMP
+      `).run(
+        opp.id,
+        opp.type || type,
+        opp.protocol,
+        opp.asset,
+        opp.chain,
+        opp.apy,
+        opp.tvl || '0',
+        opp.min_amount || '0',
+        opp.max_amount || null,
+        opp.lock_period || 0,
+        opp.risk_level || 'medium',
+        opp.verified !== undefined ? opp.verified : 1,
+        opp.active !== undefined ? opp.active : 1,
+        opp.protocol_url || null,
+        opp.icon_url || null,
+        opp.description || null,
+        opp.terms || null
+      );
+    }
+    
     return opportunities.length;
   }
 
@@ -592,7 +617,7 @@ class EarnService {
 
     sql += ` GROUP BY asset, chain ORDER BY opportunities DESC`;
 
-    return db.prepare(sql).all(...params);
+    return await db.prepare(sql).all(...params);
   }
 
   /**

@@ -1,4 +1,4 @@
-const db = require('../db/dapps.db');
+const db = require('../db/index');
 const { success, error } = require('../utils/response');
 const auditLogger = require('../security/audit-logger.service');
 
@@ -255,7 +255,7 @@ exports.searchDApps = async (req, res) => {
     sql += ` GROUP BY d.id ORDER BY d.user_count DESC LIMIT ? OFFSET ?`;
     params.push(parseInt(pageSize), offset);
 
-    const dapps = db.prepare(sql).all(...params);
+    const dapps = await db.prepare(sql).all(...params);
 
     const formattedDApps = dapps.map(dapp => ({
       id: dapp.id,
@@ -368,11 +368,11 @@ exports.getAllDApps = async (req, res) => {
     sql += ` GROUP BY d.id ORDER BY d.display_order ASC, d.user_count DESC LIMIT ? OFFSET ?`;
     params.push(parseInt(pageSize), offset);
 
-    const dapps = db.prepare(sql).all(...params);
+    const dapps = await db.prepare(sql).all(...params);
 
     const totalCount = featured !== undefined 
-      ? db.prepare(`SELECT COUNT(*) as count FROM dapps WHERE featured = ?`).get(featured === 'true' ? 1 : 0)
-      : db.prepare(`SELECT COUNT(*) as count FROM dapps`).get();
+      ? await db.prepare(`SELECT COUNT(*) as count FROM dapps WHERE featured = ?`).get(featured === 'true' ? 1 : 0)
+      : await db.prepare(`SELECT COUNT(*) as count FROM dapps`).get();
 
     const formattedDApps = dapps.map(dapp => ({
       id: dapp.id,
