@@ -227,7 +227,7 @@ exports.testEmailToAdmin = async (req, res) => {
  */
 exports.getWalletBalanceMonitorConfig = async (req, res) => {
   try {
-    const config = walletDB
+    const config = await walletDB
       .prepare('SELECT * FROM wallet_balance_monitor_config WHERE id = 1')
       .get();
 
@@ -281,7 +281,7 @@ exports.setWalletBalanceMonitorConfig = async (req, res) => {
     }
 
     // Get current config
-    const currentConfig = walletDB
+    const currentConfig = await walletDB
       .prepare('SELECT * FROM wallet_balance_monitor_config WHERE id = 1')
       .get();
 
