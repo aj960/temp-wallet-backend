@@ -4,6 +4,7 @@
  * 
  * Migrated from SQLite to MySQL
  */
+require('dotenv').config();
 
 const MySQLWrapper = require('./mysql-wrapper');
 const path = require('path');

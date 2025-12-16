@@ -14,6 +14,8 @@
  *   SQLITE_DB_PATH - Path to SQLite database (default: data/wallets.db)
  */
 
+require('dotenv').config();
+
 const Database = require('better-sqlite3');
 const mysql = require('mysql2/promise');
 const path = require('path');
@@ -21,8 +23,10 @@ const fs = require('fs');
 
 // Configuration
 const sqlitePath = process.env.SQLITE_DB_PATH || path.join(__dirname, '../data/wallets.db');
+console.log(process.env.DB_HOST, process.env.DB_NAME, process.env.DB_PASSWORD, process.env.DB_USER)
 const mysqlConfig = {
   host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || '3306',
   user: process.env.DB_USER || 'app_user',
   password: process.env.DB_PASSWORD || 'qwe123QWE!@#',
   database: process.env.DB_NAME || 'wallet_db'
