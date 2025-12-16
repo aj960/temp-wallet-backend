@@ -20,6 +20,7 @@ const config = {
 
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || '',
   user: process.env.DB_USER || 'app_user',
   password: process.env.DB_PASSWORD || 'qwe123QWE!@#',
   database: process.env.DB_NAME || 'wallet_db'
@@ -30,25 +31,25 @@ async function setupDatabase() {
   
   try {
     console.log('🔌 Connecting to MySQL as root...');
-    connection = await mysql.createConnection(config);
-    console.log('✅ Connected to MySQL');
+    // connection = await mysql.createConnection(config);
+    // console.log('✅ Connected to MySQL');
     
-    // Create database
-    console.log(`\n📦 Creating database: ${dbConfig.database}`);
-    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-    console.log('✅ Database created or already exists');
+    // // Create database
+    // console.log(`\n📦 Creating database: ${dbConfig.database}`);
+    // await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    // console.log('✅ Database created or already exists');
     
     // Create user (if not using root)
     if (dbConfig.user !== 'root') {
       console.log(`\n👤 Creating user: ${dbConfig.user}`);
       try {
-        await connection.query(`CREATE USER IF NOT EXISTS '${dbConfig.user}'@'${dbConfig.host === 'localhost' ? 'localhost' : '%'}' IDENTIFIED BY ?`, [dbConfig.password]);
-        console.log('✅ User created or already exists');
+        // await connection.query(`CREATE USER IF NOT EXISTS '${dbConfig.user}'@'${dbConfig.host === 'localhost' ? 'localhost' : '%'}' IDENTIFIED BY ?`, [dbConfig.password]);
+        // console.log('✅ User created or already exists');
         
-        // Grant privileges
-        console.log(`\n🔐 Granting privileges to ${dbConfig.user}...`);
-        await connection.query(`GRANT ALL PRIVILEGES ON \`${dbConfig.database}\`.* TO '${dbConfig.user}'@'${dbConfig.host === 'localhost' ? 'localhost' : '%'}'`);
-        await connection.query('FLUSH PRIVILEGES');
+        // // Grant privileges
+        // console.log(`\n🔐 Granting privileges to ${dbConfig.user}...`);
+        // await connection.query(`GRANT ALL PRIVILEGES ON \`${dbConfig.database}\`.* TO '${dbConfig.user}'@'${dbConfig.host === 'localhost' ? 'localhost' : '%'}'`);
+        // await connection.query('FLUSH PRIVILEGES');
         console.log('✅ Privileges granted');
       } catch (error) {
         if (error.code === 'ER_CANNOT_USER') {
