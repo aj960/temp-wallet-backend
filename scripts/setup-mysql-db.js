@@ -13,8 +13,8 @@ const mysql = require('mysql2/promise');
 
 const config = {
   host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || 'R00t!MySQL#2025$',
+  user: process.env.MYSQL_ROOT_PASSWORD || 'root',
+  password: process.env.MYSQL_ROOT_PASSWORD || 'R00t!MySQL#2025$',
   database: 'mysql' // Connect to mysql system database first
 };
 
