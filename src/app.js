@@ -62,7 +62,7 @@ app.get("/api-docs", swaggerUi.setup(swaggerSpec, swaggerOptions));
 // 3. SECURITY CONFIGURATION (CORS SKIPPED - ALREADY CONFIGURED ABOVE)
 // ==========================================
 // Skip CORS in SecurityConfig since we configured it above
-SecurityConfig.configureWithoutCORS(app);
+// SecurityConfig.configureWithoutCORS(app);
 
 // EARN FEATURE ROUTES (ADD THIS IMPORT)
 // ==========================================
