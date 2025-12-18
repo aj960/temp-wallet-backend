@@ -8,6 +8,7 @@
  * 
  * Note: This script requires MySQL root access to create the database and user.
  */
+require('dotenv').config();
 
 const mysql = require('mysql2/promise');
 
