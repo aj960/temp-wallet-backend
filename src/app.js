@@ -219,7 +219,7 @@ registerZeroX(app);
 // ==========================================
 // 9. ERROR HANDLING
 // ==========================================
-SecurityConfig.applyErrorHandler(app);
+// SecurityConfig.applyErrorHandler(app);
 
 // ==========================================
 // 10. GRACEFUL SHUTDOWN
