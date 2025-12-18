@@ -38,7 +38,8 @@ const logger = require("./middleware/logger");
 
 const app = express();
 
-app.options("*", cors());
+app.use(cors());
+app.use(express.json());
 
 // ==========================================
 // 0. CORS FIRST (BEFORE EVERYTHING - ALLOW ALL ORIGINS)
