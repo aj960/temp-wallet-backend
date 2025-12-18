@@ -20,5 +20,5 @@ EXPOSE 8083
 RUN chown -R node:node /app
 USER node
 
-CMD ["node", "src/server.js"]
+CMD ["node", "server.js"]
 
