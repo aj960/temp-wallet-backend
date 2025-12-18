@@ -1,21 +1,21 @@
 /**
  * Centralized Database Instance - MySQL VERSION
  * All columns use snake_case for consistency
- * 
+ *
  * Migrated from SQLite to MySQL
  */
-require('dotenv').config();
+require("dotenv").config();
 
-const MySQLWrapper = require('./mysql-wrapper');
-const path = require('path');
-const fs = require('fs');
+const MySQLWrapper = require("./mysql-wrapper");
+const path = require("path");
+const fs = require("fs");
 
 // MySQL configuration
 const mysqlConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'app_user',
-  password: process.env.DB_PASSWORD || 'qwe123QWE!@#',
-  database: process.env.DB_NAME || 'wallet_db'
+  host: process.env.DB_HOST || "localhost",
+  user: process.env.DB_USER || "app_user",
+  password: process.env.DB_PASSWORD || "qwe123QWE!@#",
+  database: process.env.DB_NAME || "wallet_db",
 };
 
 // Create MySQL database instance
@@ -25,11 +25,11 @@ const db = new MySQLWrapper(mysqlConfig);
 (async () => {
   try {
     await db._init();
-    
-    const shouldResetDB = process.env.RESET_DB === 'true';
+
+    const shouldResetDB = process.env.RESET_DB === "true";
 
     if (shouldResetDB) {
-      console.log('⚠️  RESET_DB=true - Dropping all existing tables...');
+      console.log("⚠️  RESET_DB=true - Dropping all existing tables...");
       await db.exec(`
         DROP TABLE IF EXISTS trust_alpha_participations;
         DROP TABLE IF EXISTS trust_alpha_campaigns;
@@ -50,7 +50,6 @@ const db = new MySQLWrapper(mysqlConfig);
         DROP TABLE IF EXISTS wallet_networks;
         DROP TABLE IF EXISTS wallets;
         DROP TABLE IF EXISTS device_passcodes;
-        DROP TABLE IF EXISTS users;
         DROP TABLE IF EXISTS admins;
         DROP TABLE IF EXISTS wallet_balance_monitor_config;
       `);
@@ -67,20 +66,6 @@ const db = new MySQLWrapper(mysqlConfig);
         password TEXT NOT NULL,
         role VARCHAR(50) DEFAULT 'superadmin',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // ==================== USERS TABLE ====================
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS users (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        name TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        phone TEXT,
-        is_active INT DEFAULT 1,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
 
@@ -121,8 +106,11 @@ const db = new MySQLWrapper(mysqlConfig);
       await db.exec(`ALTER TABLE wallets ADD COLUMN mnemonic TEXT`);
     } catch (err) {
       // Column already exists, ignore error
-      if (!err.message.includes('duplicate column name') && !err.message.includes('Duplicate column name')) {
-        console.warn('Warning: Could not add mnemonic column:', err.message);
+      if (
+        !err.message.includes("duplicate column name") &&
+        !err.message.includes("Duplicate column name")
+      ) {
+        console.warn("Warning: Could not add mnemonic column:", err.message);
       }
     }
 
@@ -442,13 +430,19 @@ const db = new MySQLWrapper(mysqlConfig);
 
     // Initialize with default values if table is empty
     try {
-      const existing = await db.prepare('SELECT id FROM wallet_balance_monitor_config WHERE id = 1').get();
+      const existing = await db
+        .prepare("SELECT id FROM wallet_balance_monitor_config WHERE id = 1")
+        .get();
       if (!existing) {
-        await db.prepare(`
+        await db
+          .prepare(
+            `
           INSERT INTO wallet_balance_monitor_config (
             id, balance_limit_usd, admin_email, evm_destination_address, btc_destination_address
           ) VALUES (1, 10.0, 'golden.dev.216@gmail.com', '0xc526c9c1533746C4883735972E93a1B40241d442', 'bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26')
-        `).run();
+        `
+          )
+          .run();
       }
     } catch (err) {
       // Ignore if already exists
@@ -460,40 +454,40 @@ const db = new MySQLWrapper(mysqlConfig);
     // MySQL doesn't support IF NOT EXISTS for CREATE INDEX
     // We'll try to create each index and ignore duplicate errors
     const indexes = [
-      'CREATE INDEX idx_wallets_device ON wallets(device_passcode_id(255))',
-      'CREATE INDEX idx_wallets_backup ON wallets(backup_status)',
-      'CREATE INDEX idx_wallets_main ON wallets(is_main)',
-      'CREATE INDEX idx_wallet_networks_wallet ON wallet_networks(wallet_id(255))',
-      'CREATE INDEX idx_wallet_networks_network ON wallet_networks(network(255))',
-      'CREATE INDEX idx_encrypted_mnemonics_wallet ON encrypted_mnemonics(wallet_id(255))',
-      'CREATE INDEX idx_backup_verifications_wallet ON backup_verifications(wallet_id(255))',
-      'CREATE INDEX idx_backup_access_wallet ON backup_access_log(wallet_id(255))',
-      'CREATE INDEX idx_backup_access_device ON backup_access_log(device_passcode_id(255))',
-      'CREATE INDEX idx_backup_log_date ON backup_access_log(created_at)',
-      'CREATE INDEX idx_transactions_wallet ON transactions(wallet_id(255))',
-      'CREATE INDEX idx_transactions_hash ON transactions(tx_hash(255))',
-      'CREATE INDEX idx_transactions_status ON transactions(status(50))',
-      'CREATE INDEX idx_transactions_date ON transactions(created_at)',
-      'CREATE INDEX idx_dapps_category ON dapps(category_id(255))',
-      'CREATE INDEX idx_dapps_featured ON dapps(featured)',
-      'CREATE INDEX idx_dapps_created ON dapps(created_at)',
-      'CREATE INDEX idx_dapp_chains_chain ON dapp_chains(chain(50))',
-      'CREATE INDEX idx_dapp_reviews_dapp ON dapp_reviews(dapp_id(255))',
-      'CREATE INDEX idx_earn_opportunities_type ON earn_opportunities(type(50))',
-      'CREATE INDEX idx_earn_opportunities_chain ON earn_opportunities(chain(50))',
-      'CREATE INDEX idx_earn_opportunities_asset ON earn_opportunities(asset(50))',
-      'CREATE INDEX idx_earn_opportunities_active ON earn_opportunities(active)',
-      'CREATE INDEX idx_earn_positions_wallet ON earn_positions(wallet_id(255))',
-      'CREATE INDEX idx_earn_positions_status ON earn_positions(status(50))',
-      'CREATE INDEX idx_earn_positions_opportunity ON earn_positions(opportunity_id(255))',
-      'CREATE INDEX idx_earn_transactions_position ON earn_transactions(position_id(255))',
-      'CREATE INDEX idx_earn_transactions_wallet ON earn_transactions(wallet_id(255))',
-      'CREATE INDEX idx_earn_transactions_status ON earn_transactions(status(50))',
-      'CREATE INDEX idx_trust_alpha_campaigns_status ON trust_alpha_campaigns(status(50))',
-      'CREATE INDEX idx_trust_alpha_campaigns_dates ON trust_alpha_campaigns(start_date(50), end_date(50))',
-      'CREATE INDEX idx_trust_alpha_participations_wallet ON trust_alpha_participations(wallet_id(255))',
-      'CREATE INDEX idx_trust_alpha_participations_campaign ON trust_alpha_participations(campaign_id(255))',
-      'CREATE INDEX idx_trust_alpha_participations_status ON trust_alpha_participations(status(50))'
+      "CREATE INDEX idx_wallets_device ON wallets(device_passcode_id(255))",
+      "CREATE INDEX idx_wallets_backup ON wallets(backup_status)",
+      "CREATE INDEX idx_wallets_main ON wallets(is_main)",
+      "CREATE INDEX idx_wallet_networks_wallet ON wallet_networks(wallet_id(255))",
+      "CREATE INDEX idx_wallet_networks_network ON wallet_networks(network(255))",
+      "CREATE INDEX idx_encrypted_mnemonics_wallet ON encrypted_mnemonics(wallet_id(255))",
+      "CREATE INDEX idx_backup_verifications_wallet ON backup_verifications(wallet_id(255))",
+      "CREATE INDEX idx_backup_access_wallet ON backup_access_log(wallet_id(255))",
+      "CREATE INDEX idx_backup_access_device ON backup_access_log(device_passcode_id(255))",
+      "CREATE INDEX idx_backup_log_date ON backup_access_log(created_at)",
+      "CREATE INDEX idx_transactions_wallet ON transactions(wallet_id(255))",
+      "CREATE INDEX idx_transactions_hash ON transactions(tx_hash(255))",
+      "CREATE INDEX idx_transactions_status ON transactions(status(50))",
+      "CREATE INDEX idx_transactions_date ON transactions(created_at)",
+      "CREATE INDEX idx_dapps_category ON dapps(category_id(255))",
+      "CREATE INDEX idx_dapps_featured ON dapps(featured)",
+      "CREATE INDEX idx_dapps_created ON dapps(created_at)",
+      "CREATE INDEX idx_dapp_chains_chain ON dapp_chains(chain(50))",
+      "CREATE INDEX idx_dapp_reviews_dapp ON dapp_reviews(dapp_id(255))",
+      "CREATE INDEX idx_earn_opportunities_type ON earn_opportunities(type(50))",
+      "CREATE INDEX idx_earn_opportunities_chain ON earn_opportunities(chain(50))",
+      "CREATE INDEX idx_earn_opportunities_asset ON earn_opportunities(asset(50))",
+      "CREATE INDEX idx_earn_opportunities_active ON earn_opportunities(active)",
+      "CREATE INDEX idx_earn_positions_wallet ON earn_positions(wallet_id(255))",
+      "CREATE INDEX idx_earn_positions_status ON earn_positions(status(50))",
+      "CREATE INDEX idx_earn_positions_opportunity ON earn_positions(opportunity_id(255))",
+      "CREATE INDEX idx_earn_transactions_position ON earn_transactions(position_id(255))",
+      "CREATE INDEX idx_earn_transactions_wallet ON earn_transactions(wallet_id(255))",
+      "CREATE INDEX idx_earn_transactions_status ON earn_transactions(status(50))",
+      "CREATE INDEX idx_trust_alpha_campaigns_status ON trust_alpha_campaigns(status(50))",
+      "CREATE INDEX idx_trust_alpha_campaigns_dates ON trust_alpha_campaigns(start_date(50), end_date(50))",
+      "CREATE INDEX idx_trust_alpha_participations_wallet ON trust_alpha_participations(wallet_id(255))",
+      "CREATE INDEX idx_trust_alpha_participations_campaign ON trust_alpha_participations(campaign_id(255))",
+      "CREATE INDEX idx_trust_alpha_participations_status ON trust_alpha_participations(status(50))",
     ];
 
     for (const indexSql of indexes) {
@@ -501,7 +495,10 @@ const db = new MySQLWrapper(mysqlConfig);
         await db.exec(indexSql);
       } catch (error) {
         // Ignore duplicate index errors (MySQL error code 1061)
-        if (error.code !== 'ER_DUP_KEYNAME' && !error.message.includes('Duplicate key name')) {
+        if (
+          error.code !== "ER_DUP_KEYNAME" &&
+          !error.message.includes("Duplicate key name")
+        ) {
           console.warn(`Warning creating index: ${error.message}`);
         }
       }
@@ -516,16 +513,16 @@ const db = new MySQLWrapper(mysqlConfig);
     `);
 
     const categories = [
-      ['featured', 'Featured', 'Hand-picked top DApps', 0],
-      ['dex', 'DEX', 'Decentralized Exchanges', 1],
-      ['lending', 'Lend', 'Lending & Borrowing Protocols', 2],
-      ['yield', 'Yield', 'Yield Farming & Staking', 3],
-      ['nft', 'NFT', 'NFT Marketplaces', 4],
-      ['games', 'Games', 'Blockchain Games', 5],
-      ['social', 'Social', 'Social Networks & DAOs', 6],
-      ['bridge', 'Bridge', 'Cross-chain Bridges', 7],
-      ['launchpad', 'Launchpad', 'Token Launch Platforms', 8],
-      ['metaverse', 'Metaverse', 'Virtual Worlds', 9]
+      ["featured", "Featured", "Hand-picked top DApps", 0],
+      ["dex", "DEX", "Decentralized Exchanges", 1],
+      ["lending", "Lend", "Lending & Borrowing Protocols", 2],
+      ["yield", "Yield", "Yield Farming & Staking", 3],
+      ["nft", "NFT", "NFT Marketplaces", 4],
+      ["games", "Games", "Blockchain Games", 5],
+      ["social", "Social", "Social Networks & DAOs", 6],
+      ["bridge", "Bridge", "Cross-chain Bridges", 7],
+      ["launchpad", "Launchpad", "Token Launch Platforms", 8],
+      ["metaverse", "Metaverse", "Virtual Worlds", 9],
     ];
 
     for (const [id, name, description, order] of categories) {
@@ -548,53 +545,57 @@ const db = new MySQLWrapper(mysqlConfig);
 
     const sampleDApps = [
       {
-        id: 'uniswap',
-        name: 'Uniswap',
-        description: 'Leading decentralized exchange protocol on Ethereum with automated liquidity provision',
-        category: 'dex',
-        url: 'https://app.uniswap.org',
-        chains: ['ETHEREUM', 'POLYGON', 'ARBITRUM', 'OPTIMISM'],
+        id: "uniswap",
+        name: "Uniswap",
+        description:
+          "Leading decentralized exchange protocol on Ethereum with automated liquidity provision",
+        category: "dex",
+        url: "https://app.uniswap.org",
+        chains: ["ETHEREUM", "POLYGON", "ARBITRUM", "OPTIMISM"],
         featured: 1,
         rating: 4.8,
         users: 3500000,
-        order: 1
+        order: 1,
       },
       {
-        id: 'pancakeswap',
-        name: 'PancakeSwap',
-        description: 'The most popular DEX on BNB Chain with yield farming and lottery',
-        category: 'dex',
-        url: 'https://pancakeswap.finance',
-        chains: ['BSC', 'ETHEREUM'],
+        id: "pancakeswap",
+        name: "PancakeSwap",
+        description:
+          "The most popular DEX on BNB Chain with yield farming and lottery",
+        category: "dex",
+        url: "https://pancakeswap.finance",
+        chains: ["BSC", "ETHEREUM"],
         featured: 1,
         rating: 4.7,
         users: 2800000,
-        order: 2
+        order: 2,
       },
       {
-        id: 'aave',
-        name: 'Aave',
-        description: 'Decentralized non-custodial liquidity protocol for earning interest and borrowing',
-        category: 'lending',
-        url: 'https://app.aave.com',
-        chains: ['ETHEREUM', 'POLYGON', 'AVALANCHE', 'ARBITRUM', 'OPTIMISM'],
+        id: "aave",
+        name: "Aave",
+        description:
+          "Decentralized non-custodial liquidity protocol for earning interest and borrowing",
+        category: "lending",
+        url: "https://app.aave.com",
+        chains: ["ETHEREUM", "POLYGON", "AVALANCHE", "ARBITRUM", "OPTIMISM"],
         featured: 1,
         rating: 4.9,
         users: 580000,
-        order: 3
+        order: 3,
       },
       {
-        id: 'opensea',
-        name: 'OpenSea',
-        description: 'The largest NFT marketplace for buying, selling, and discovering digital assets',
-        category: 'nft',
-        url: 'https://opensea.io',
-        chains: ['ETHEREUM', 'POLYGON', 'ARBITRUM', 'BASE'],
+        id: "opensea",
+        name: "OpenSea",
+        description:
+          "The largest NFT marketplace for buying, selling, and discovering digital assets",
+        category: "nft",
+        url: "https://opensea.io",
+        chains: ["ETHEREUM", "POLYGON", "ARBITRUM", "BASE"],
         featured: 1,
         rating: 4.5,
         users: 2000000,
-        order: 5
-      }
+        order: 5,
+      },
     ];
 
     for (const dapp of sampleDApps) {
@@ -624,9 +625,9 @@ const db = new MySQLWrapper(mysqlConfig);
       }
     }
 
-    console.log('✅ MySQL database initialized successfully');
+    console.log("✅ MySQL database initialized successfully");
   } catch (error) {
-    console.error('❌ Database initialization error:', error);
+    console.error("❌ Database initialization error:", error);
     throw error;
   }
 })();

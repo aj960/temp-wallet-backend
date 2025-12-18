@@ -26,6 +26,24 @@ class SecurityConfig {
     
     auditLogger.logger.info('Security configuration applied successfully');
   }
+
+  /**
+   * Apply security configurations without CORS (CORS configured separately)
+   */
+  static configureWithoutCORS(app) {
+    // 1. Apply security headers
+    this.applySecurityHeaders(app);
+    
+    // 2. Skip CORS (already configured)
+    
+    // 3. Apply request protection
+    this.applyRequestProtection(app);
+    
+    // 4. Apply additional security measures
+    this.applyAdditionalSecurity(app);
+    
+    auditLogger.logger.info('Security configuration applied successfully (CORS skipped)');
+  }
   
   /**
    * Apply comprehensive security headers
@@ -132,8 +150,14 @@ class SecurityConfig {
   
   /**
    * Configure CORS - Allow all origins
+   * NOTE: This method is kept for backward compatibility but CORS should be configured
+   * directly in app.js to prevent duplicate headers from Kubernetes ingress
    */
   static configureCORS(app) {
+    // This method is deprecated - CORS should be configured in app.js first
+    // to prevent duplicate headers from ingress/proxy
+    console.warn('Warning: configureCORS called but CORS should be configured in app.js first');
+    
     const corsOptions = {
       origin: true, // Allow all origins
       credentials: true,
