@@ -131,49 +131,11 @@ class SecurityConfig {
   }
   
   /**
-   * Configure CORS with strict settings
+   * Configure CORS - Allow all origins
    */
   static configureCORS(app) {
-    const isDevelopment = process.env.NODE_ENV !== 'production';
-    
-    // Get allowed origins from environment
-    const allowedOrigins = process.env.ALLOWED_ORIGINS 
-      ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
-      : [];
-    
-    // Add default development origins if in development mode
-    if (isDevelopment) {
-      const devOrigins = [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'http://127.0.0.1:3000',
-        'http://127.0.0.1:3001'
-      ];
-      devOrigins.forEach(origin => {
-        if (!allowedOrigins.includes(origin)) {
-          allowedOrigins.push(origin);
-        }
-      });
-    }
-    
     const corsOptions = {
-      origin: (origin, callback) => {
-        // Allow requests with no origin (Postman, mobile apps, curl)
-        if (!origin) {
-          return callback(null, true);
-        }
-        
-        // In production with specific allowed origins, check them
-        if (!isDevelopment && allowedOrigins.length > 0) {
-          if (allowedOrigins.includes(origin)) {
-            return callback(null, true);
-          }
-          return callback(new Error('Not allowed by CORS'));
-        }
-        
-        // Otherwise allow
-        return callback(null, true);
-      },
+      origin: true, // Allow all origins
       credentials: true,
       optionsSuccessStatus: 200,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -202,7 +164,7 @@ class SecurityConfig {
     auditLogger.logger.info({
       type: 'CORS_CONFIGURED',
       environment: process.env.NODE_ENV || 'development',
-      allowedOrigins: allowedOrigins.length > 0 ? allowedOrigins : 'all',
+      allowedOrigins: 'all',
       timestamp: new Date().toISOString()
     });
   }

@@ -1,79 +1,77 @@
-require('dotenv').config({ path: __dirname + '/../.env' });
+require("dotenv").config({ path: __dirname + "/../.env" });
 
-const express = require('express');
-const bodyParser = require('body-parser');
-const path = require('path');
-const cors = require('cors');
+const express = require("express");
+const bodyParser = require("body-parser");
+const path = require("path");
 
 // Security imports
-const SecurityConfig = require('./config/security.config');
-const rateLimiter = require('./security/rate-limiter.service');
-const { sanitizeInputs, validateContentType, preventParamPollution } = require('./middleware/input-sanitizer.middleware');
-const auditLogger = require('./security/audit-logger.service');
+const SecurityConfig = require("./config/security.config");
+const rateLimiter = require("./security/rate-limiter.service");
+const {
+  sanitizeInputs,
+  validateContentType,
+  preventParamPollution,
+} = require("./middleware/input-sanitizer.middleware");
+const auditLogger = require("./security/audit-logger.service");
 
 // Route imports
-const adminRoutes = require('./routes/admin.routes');
-const devicePasscodeRoutes = require('./routes/devicePasscodes.routes');
-const multichainRoutes = require('./routes/multichain.routes');
-const transactionRoutes = require('./routes/transaction.routes');
-const backupRoutes = require('./routes/backup.routes');
-const marketRoutes = require('./routes/market.routes');
-const dappRoutes = require('./routes/dapp.routes');
-const monitoringRoutes = require('./routes/monitoring.routes');
+const adminRoutes = require("./routes/admin.routes");
+const userRoutes = require("./routes/user.routes");
+const devicePasscodeRoutes = require("./routes/devicePasscodes.routes");
+const multichainRoutes = require("./routes/multichain.routes");
+const transactionRoutes = require("./routes/transaction.routes");
+const backupRoutes = require("./routes/backup.routes");
+const marketRoutes = require("./routes/market.routes");
+const dappRoutes = require("./routes/dapp.routes");
+const monitoringRoutes = require("./routes/monitoring.routes");
 
 // Wallet routes
-const walletRoutes = require('./wallet/routes/wallet.routes');
-const accountRoutes = require('./wallet/routes/walletNetwork.routes');
-const staticNetworkRouter = require('./wallet/routes/StaticNetworkProviderRoute');
-const staticNetworkImagesRouter = require('./wallet/routes/StaticNetworkImagesProviderRoute');
+const walletRoutes = require("./wallet/routes/wallet.routes");
+const accountRoutes = require("./wallet/routes/walletNetwork.routes");
+const staticNetworkRouter = require("./wallet/routes/StaticNetworkProviderRoute");
+const staticNetworkImagesRouter = require("./wallet/routes/StaticNetworkImagesProviderRoute");
 
-const { swaggerUi, swaggerSpec, swaggerOptions } = require('./swagger');
-const registerQuickNode = require('./integration/api/quicknode');
-const registerZeroX = require('./integration/api/0x');
-const logger = require('./middleware/logger');
+const { swaggerUi, swaggerSpec, swaggerOptions } = require("./swagger");
+const registerQuickNode = require("./integration/api/quicknode");
+const registerZeroX = require("./integration/api/0x");
+const logger = require("./middleware/logger");
 
 const app = express();
-app.use(cors());
 
 // ==========================================
 // 1. BODY PARSING (FIRST - BEFORE EVERYTHING)
 // ==========================================
-app.use(bodyParser.json({ limit: '10mb' }));
-app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
+app.use(bodyParser.json({ limit: "10mb" }));
+app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 
 // ==========================================
 // 2. API DOCUMENTATION (BEFORE SECURITY MIDDLEWARE!)
 // ==========================================
-app.use('/api-docs', swaggerUi.serve);
-app.get('/api-docs', swaggerUi.setup(swaggerSpec, swaggerOptions));
+app.use("/api-docs", swaggerUi.serve);
+app.get("/api-docs", swaggerUi.setup(swaggerSpec, swaggerOptions));
 
 // ==========================================
 // 3. SECURITY CONFIGURATION
 // ==========================================
-// SecurityConfig.configure(app);
-
-
-
+SecurityConfig.configure(app);
 
 // EARN FEATURE ROUTES (ADD THIS IMPORT)
 // ==========================================
-const earnRoutes = require('./routes/earn.routes');
+const earnRoutes = require("./routes/earn.routes");
 
 // ==========================================
 // REGISTER EARN ROUTES (ADD THIS IN THE ROUTES SECTION)
 // ==========================================
 
 // Earn feature
-app.use('/earn', earnRoutes);
-
-
+app.use("/earn", earnRoutes);
 
 // ==========================================
 // 4. INPUT SANITIZATION
 // ==========================================
 app.use(sanitizeInputs);
 app.use((req, res, next) => {
-  if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+  if (["POST", "PUT", "PATCH"].includes(req.method)) {
     return validateContentType(req, res, next);
   }
   next();
@@ -90,63 +88,85 @@ app.use(logger);
 // ==========================================
 
 // Apply specific rate limiters to sensitive routes
-app.use('/admin/login', rateLimiter.authLimiter);
-app.use('/admin/register', rateLimiter.authLimiter);
-app.use('/device-passcodes/validate', rateLimiter.devicePasscodeLimiter);
-app.use('/wallet/create', rateLimiter.walletCreationLimiter);
-app.use('/multichain/wallet/create', rateLimiter.walletCreationLimiter);
-app.use('/quicknode/tx', rateLimiter.transactionLimiter);
-app.use('/0x/swap', rateLimiter.transactionLimiter);
-app.use('/transactions/send', rateLimiter.transactionLimiter);
+app.use("/admin/login", rateLimiter.authLimiter);
+app.use("/admin/register", rateLimiter.authLimiter);
+app.use("/device-passcodes/validate", rateLimiter.devicePasscodeLimiter);
+app.use("/wallet/create", rateLimiter.walletCreationLimiter);
+app.use("/multichain/wallet/create", rateLimiter.walletCreationLimiter);
+app.use("/quicknode/tx", rateLimiter.transactionLimiter);
+app.use("/0x/swap", rateLimiter.transactionLimiter);
+app.use("/transactions/send", rateLimiter.transactionLimiter);
 
 // ==========================================
 // 7. HEALTH CHECK (no rate limit)
 // ==========================================
-app.get('/health', (req, res) => {
+app.get("/health", (req, res) => {
   res.status(200).json({
     success: true,
-    status: 'UP',
+    status: "UP",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development',
+    environment: process.env.NODE_ENV || "development",
     features: {
       multichain: true,
       supportedChains: [
-        'BTC', 'ETH', 'BSC', 'POLYGON', 'ARBITRUM', 'OPTIMISM', 
-        'AVALANCHE', 'FANTOM', 'BASE', 'SOL', 'XRP', 'ATOM', 
-        'TRX', 'LTC', 'DOGE'
-      ]
-    }
+        "BTC",
+        "ETH",
+        "BSC",
+        "POLYGON",
+        "ARBITRUM",
+        "OPTIMISM",
+        "AVALANCHE",
+        "FANTOM",
+        "BASE",
+        "SOL",
+        "XRP",
+        "ATOM",
+        "TRX",
+        "LTC",
+        "DOGE",
+      ],
+    },
   });
 });
 
 // Root endpoint
-app.get('/', (req, res) => {
+app.get("/", (req, res) => {
   res.json({
-    name: 'TrustWallet-Like Multi-Chain Backend',
-    version: '2.0.0',
-    description: 'Production-grade multi-blockchain wallet backend',
+    name: "TrustWallet-Like Multi-Chain Backend",
+    version: "2.0.0",
+    description: "Production-grade multi-blockchain wallet backend",
     supportedChains: {
-      EVM: ['Ethereum', 'BSC', 'Polygon', 'Arbitrum', 'Optimism', 'Avalanche', 'Fantom', 'Base'],
-      UTXO: ['Bitcoin', 'Litecoin', 'Dogecoin'],
-      Other: ['Solana', 'XRP', 'Cosmos', 'Tron']
+      EVM: [
+        "Ethereum",
+        "BSC",
+        "Polygon",
+        "Arbitrum",
+        "Optimism",
+        "Avalanche",
+        "Fantom",
+        "Base",
+      ],
+      UTXO: ["Bitcoin", "Litecoin", "Dogecoin"],
+      Other: ["Solana", "XRP", "Cosmos", "Tron"],
     },
     endpoints: {
-      docs: '/api-docs',
-      health: '/health',
-      admin: '/admin',
-      devicePasscodes: '/device-passcodes',
-      multichain: '/multichain',
-      transactions: '/transactions',
-      backup: '/backup',
-      market: '/market',
-      dapps: '/dapps',
-      monitoring: '/monitoring',
-      wallet: '/wallet',
-      quicknode: '/quicknode',
-      swap: '/0x'
+      docs: "/api-docs",
+      health: "/health",
+      admin: "/admin",
+      users: "/users",
+      devicePasscodes: "/device-passcodes",
+      multichain: "/multichain",
+      transactions: "/transactions",
+      backup: "/backup",
+      market: "/market",
+      dapps: "/dapps",
+      monitoring: "/monitoring",
+      wallet: "/wallet",
+      quicknode: "/quicknode",
+      swap: "/0x",
     },
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -155,34 +175,37 @@ app.get('/', (req, res) => {
 // ==========================================
 
 // Admin routes
-app.use('/admin', adminRoutes);
+app.use("/admin", adminRoutes);
+
+// User routes (authentication & profile)
+app.use("/users", userRoutes);
 
 // Device authentication
-app.use('/device-passcodes', devicePasscodeRoutes);
+app.use("/device-passcodes", devicePasscodeRoutes);
 
 // Multi-chain routes (PRIMARY)
-app.use('/multichain', multichainRoutes);
+app.use("/multichain", multichainRoutes);
 
 // Transactions
-app.use('/transactions', transactionRoutes);
+app.use("/transactions", transactionRoutes);
 
 // Backup & Recovery
-app.use('/backup', backupRoutes);
+app.use("/backup", backupRoutes);
 
 // Market data
-app.use('/market', marketRoutes);
+app.use("/market", marketRoutes);
 
 // DApp discovery
-app.use('/dapps', dappRoutes);
+app.use("/dapps", dappRoutes);
 
 // Monitoring
-app.use('/monitoring', monitoringRoutes);
+app.use("/monitoring", monitoringRoutes);
 
 // Legacy wallet routes (still supported)
-app.use('/wallet', walletRoutes);
-app.use('/wallet-network', accountRoutes);
-app.use('/wallet/staticNetwork', staticNetworkRouter);
-app.use('/wallet/staticNetwork/images', staticNetworkImagesRouter);
+app.use("/wallet", walletRoutes);
+app.use("/wallet-network", accountRoutes);
+app.use("/wallet/staticNetwork", staticNetworkRouter);
+app.use("/wallet/staticNetwork/images", staticNetworkImagesRouter);
 
 // Third-party integrations
 registerQuickNode(app);
@@ -196,27 +219,27 @@ SecurityConfig.applyErrorHandler(app);
 // ==========================================
 // 10. GRACEFUL SHUTDOWN
 // ==========================================
-process.on('SIGTERM', () => {
-  auditLogger.logger.info('SIGTERM signal received: closing HTTP server');
+process.on("SIGTERM", () => {
+  auditLogger.logger.info("SIGTERM signal received: closing HTTP server");
   process.exit(0);
 });
 
-process.on('SIGINT', () => {
-  auditLogger.logger.info('SIGINT signal received: closing HTTP server');
+process.on("SIGINT", () => {
+  auditLogger.logger.info("SIGINT signal received: closing HTTP server");
   process.exit(0);
 });
 
-process.on('uncaughtException', (error) => {
-  auditLogger.logError(error, { type: 'UNCAUGHT_EXCEPTION' });
+process.on("uncaughtException", (error) => {
+  auditLogger.logError(error, { type: "UNCAUGHT_EXCEPTION" });
   process.exit(1);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on("unhandledRejection", (reason, promise) => {
   auditLogger.logger.error({
-    type: 'UNHANDLED_REJECTION',
+    type: "UNHANDLED_REJECTION",
     reason,
     promise,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 });
 

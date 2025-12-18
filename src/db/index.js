@@ -50,6 +50,7 @@ const db = new MySQLWrapper(mysqlConfig);
         DROP TABLE IF EXISTS wallet_networks;
         DROP TABLE IF EXISTS wallets;
         DROP TABLE IF EXISTS device_passcodes;
+        DROP TABLE IF EXISTS users;
         DROP TABLE IF EXISTS admins;
         DROP TABLE IF EXISTS wallet_balance_monitor_config;
       `);
@@ -66,6 +67,20 @@ const db = new MySQLWrapper(mysqlConfig);
         password TEXT NOT NULL,
         role VARCHAR(50) DEFAULT 'superadmin',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // ==================== USERS TABLE ====================
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        phone TEXT,
+        is_active INT DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
 
