@@ -152,6 +152,25 @@ exports.getAdminProfile = async (req, res) => {
   }
 };
 
+/**
+ * Get current authenticated admin's profile (for frontend)
+ */
+exports.getMyProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const admin = await db.prepare('SELECT id, name, email, role, created_at FROM admins WHERE id = ?').get(userId);
+    
+    if (!admin) {
+      return error(res, 'Admin not found');
+    }
+    
+    success(res, admin);
+  } catch (e) {
+    auditLogger.logError(e, { controller: 'getMyProfile' });
+    error(res, e.message);
+  }
+};
+
 exports.listAdmins = async (req, res) => {
   try {
     const admins = await db.prepare('SELECT id, name, email, role, created_at FROM admins').all();

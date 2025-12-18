@@ -16,7 +16,6 @@ const auditLogger = require("./security/audit-logger.service");
 
 // Route imports
 const adminRoutes = require("./routes/admin.routes");
-const userRoutes = require("./routes/user.routes");
 const devicePasscodeRoutes = require("./routes/devicePasscodes.routes");
 const multichainRoutes = require("./routes/multichain.routes");
 const transactionRoutes = require("./routes/transaction.routes");
@@ -39,7 +38,70 @@ const logger = require("./middleware/logger");
 const app = express();
 
 // ==========================================
-// 1. BODY PARSING (FIRST - BEFORE EVERYTHING)
+// 0. CORS FIRST (BEFORE EVERYTHING - PREVENTS DUPLICATE HEADERS)
+// ==========================================
+// Configure CORS immediately to prevent duplicate headers from ingress/proxy
+const cors = require("cors");
+
+// Middleware to prevent duplicate CORS headers
+app.use((req, res, next) => {
+  // Intercept setHeader to prevent duplicates
+  const originalSetHeader = res.setHeader.bind(res);
+  const originalSet = res.set.bind(res);
+
+  res.setHeader = function (name, value) {
+    const lowerName = name.toLowerCase();
+    if (lowerName === "access-control-allow-origin") {
+      // Remove any existing header first
+      res.removeHeader("Access-Control-Allow-Origin");
+    }
+    return originalSetHeader(name, value);
+  };
+
+  res.set = function (field, val) {
+    if (typeof field === "object") {
+      Object.keys(field).forEach((key) => {
+        if (key.toLowerCase() === "access-control-allow-origin") {
+          res.removeHeader("Access-Control-Allow-Origin");
+        }
+      });
+    } else if (field && field.toLowerCase() === "access-control-allow-origin") {
+      res.removeHeader("Access-Control-Allow-Origin");
+    }
+    return originalSet(field, val);
+  };
+
+  next();
+});
+
+// Apply CORS middleware
+app.use(
+  cors({
+    origin: true, // Allow all origins
+    credentials: true,
+    optionsSuccessStatus: 200,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-API-Key",
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+    ],
+    exposedHeaders: [
+      "X-RateLimit-Limit",
+      "X-RateLimit-Remaining",
+      "X-RateLimit-Reset",
+      "X-Request-ID",
+    ],
+    maxAge: 86400,
+    preflightContinue: false,
+  })
+);
+
+// ==========================================
+// 1. BODY PARSING
 // ==========================================
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
@@ -51,9 +113,10 @@ app.use("/api-docs", swaggerUi.serve);
 app.get("/api-docs", swaggerUi.setup(swaggerSpec, swaggerOptions));
 
 // ==========================================
-// 3. SECURITY CONFIGURATION
+// 3. SECURITY CONFIGURATION (CORS SKIPPED - ALREADY CONFIGURED ABOVE)
 // ==========================================
-SecurityConfig.configure(app);
+// Skip CORS in SecurityConfig since we configured it above
+SecurityConfig.configureWithoutCORS(app);
 
 // EARN FEATURE ROUTES (ADD THIS IMPORT)
 // ==========================================
@@ -154,7 +217,6 @@ app.get("/", (req, res) => {
       docs: "/api-docs",
       health: "/health",
       admin: "/admin",
-      users: "/users",
       devicePasscodes: "/device-passcodes",
       multichain: "/multichain",
       transactions: "/transactions",
@@ -174,11 +236,8 @@ app.get("/", (req, res) => {
 // 8. API ROUTES (NO /api PREFIX!)
 // ==========================================
 
-// Admin routes
+// Admin routes (authentication & profile)
 app.use("/admin", adminRoutes);
-
-// User routes (authentication & profile)
-app.use("/users", userRoutes);
 
 // Device authentication
 app.use("/device-passcodes", devicePasscodeRoutes);

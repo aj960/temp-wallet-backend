@@ -319,6 +319,44 @@ router.post('/refresh', adminController.refreshToken);
 
 /**
  * @swagger
+ * /admin/profile:
+ *   get:
+ *     summary: Get current authenticated admin's profile
+ *     tags: [Admins]
+ *     security:
+ *       - bearerAuth: []
+ *     description: Returns the profile of the currently authenticated admin (any authenticated user can access their own profile)
+ *     responses:
+ *       200:
+ *         description: Admin profile
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AdminProfile'
+ *             example:
+ *               success: true
+ *               data:
+ *                 id: 1
+ *                 name: John Doe
+ *                 email: admin@twwwin.com
+ *                 role: superadmin
+ *                 created_at: "2024-01-01T00:00:00Z"
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             example:
+ *               success: false
+ *               error: Access denied. No token provided.
+ */
+router.get(
+  '/profile',
+  verifyToken,
+  adminController.getMyProfile
+);
+
+/**
+ * @swagger
  * /admin:
  *   get:
  *     summary: List all admins (Admin only)
