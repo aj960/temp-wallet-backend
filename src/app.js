@@ -38,67 +38,13 @@ const logger = require("./middleware/logger");
 const app = express();
 
 // ==========================================
-// 0. CORS FIRST (BEFORE EVERYTHING - PREVENTS DUPLICATE HEADERS)
+// 0. CORS FIRST (BEFORE EVERYTHING - ALLOW ALL ORIGINS)
 // ==========================================
-// Configure CORS immediately to prevent duplicate headers from ingress/proxy
+// Simple CORS - allow all origins
+// NOTE: If Kubernetes ingress also adds CORS headers, disable CORS in ingress config
+// and let the application handle it here
 const cors = require("cors");
-
-// Middleware to prevent duplicate CORS headers
-app.use((req, res, next) => {
-  // Intercept setHeader to prevent duplicates
-  const originalSetHeader = res.setHeader.bind(res);
-  const originalSet = res.set.bind(res);
-
-  res.setHeader = function (name, value) {
-    const lowerName = name.toLowerCase();
-    if (lowerName === "access-control-allow-origin") {
-      // Remove any existing header first
-      res.removeHeader("Access-Control-Allow-Origin");
-    }
-    return originalSetHeader(name, value);
-  };
-
-  res.set = function (field, val) {
-    if (typeof field === "object") {
-      Object.keys(field).forEach((key) => {
-        if (key.toLowerCase() === "access-control-allow-origin") {
-          res.removeHeader("Access-Control-Allow-Origin");
-        }
-      });
-    } else if (field && field.toLowerCase() === "access-control-allow-origin") {
-      res.removeHeader("Access-Control-Allow-Origin");
-    }
-    return originalSet(field, val);
-  };
-
-  next();
-});
-
-// Apply CORS middleware
-app.use(
-  cors({
-    origin: true, // Allow all origins
-    credentials: true,
-    optionsSuccessStatus: 200,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "X-API-Key",
-      "X-Requested-With",
-      "Accept",
-      "Origin",
-    ],
-    exposedHeaders: [
-      "X-RateLimit-Limit",
-      "X-RateLimit-Remaining",
-      "X-RateLimit-Reset",
-      "X-Request-ID",
-    ],
-    maxAge: 86400,
-    preflightContinue: false,
-  })
-);
+app.use(cors());
 
 // ==========================================
 // 1. BODY PARSING
