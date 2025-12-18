@@ -40,7 +40,7 @@ const app = express();
 
 // Trust proxy - required when running behind reverse proxy (Docker, Kubernetes, etc.)
 // This allows express-rate-limit to correctly identify client IPs from X-Forwarded-For header
-app.set("trust proxy", true);
+app.set("trust proxy", 1);
 
 app.use(cors());
 app.use(express.json());
