@@ -40,11 +40,62 @@ const app = express();
 // ==========================================
 // 0. CORS FIRST (BEFORE EVERYTHING - ALLOW ALL ORIGINS)
 // ==========================================
-// Simple CORS - allow all origins
-// NOTE: If Kubernetes ingress also adds CORS headers, disable CORS in ingress config
-// and let the application handle it here
-const cors = require("cors");
-app.use(cors());
+// Manual CORS handler to prevent duplicate headers from Kubernetes ingress
+// IMPORTANT: Disable CORS in your Kubernetes ingress configuration!
+// If ingress adds CORS headers, they will conflict with these.
+
+app.use((req, res, next) => {
+  // Remove any existing CORS headers first (in case ingress added them)
+  const corsHeaderNames = [
+    "Access-Control-Allow-Origin",
+    "Access-Control-Allow-Methods",
+    "Access-Control-Allow-Headers",
+    "Access-Control-Allow-Credentials",
+    "Access-Control-Expose-Headers",
+    "Access-Control-Max-Age",
+  ];
+
+  corsHeaderNames.forEach((header) => {
+    try {
+      res.removeHeader(header);
+    } catch (e) {
+      // Header might not exist, ignore
+    }
+  });
+
+  // Get origin from request
+  const origin = req.headers.origin;
+
+  // Set CORS headers - allow all origins
+  // Use origin if provided, otherwise allow all
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+  );
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-API-Key, X-Requested-With, Accept, Origin"
+  );
+  res.setHeader(
+    "Access-Control-Expose-Headers",
+    "X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-Request-ID"
+  );
+  res.setHeader("Access-Control-Max-Age", "86400");
+
+  // Handle preflight OPTIONS request
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  next();
+});
 
 // ==========================================
 // 1. BODY PARSING
