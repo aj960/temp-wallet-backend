@@ -9,7 +9,6 @@ const { walletDB } = require("../../wallet/db");
 const multichainService = require("../multichain/multichain.service");
 const notificationService = require("./notification.service");
 const auditLogger = require("../../security/audit-logger.service");
-const encryptionService = require("../../security/encryption.service");
 const {
   getProviderWithFailover,
 } = require("../../config/rpc-providers.config");
@@ -512,14 +511,16 @@ class WalletBalanceMonitorService {
       `\n📤 Starting to send all balances for wallet ${wallet.id}...`
     );
 
-    // Get wallet mnemonic
-    const mnemonic = walletDB
-      .prepare("SELECT mnemonic FROM mnemonic WHERE wallet_id = ?")
+    // Get wallet mnemonic directly from wallets table
+    const walletRecord = await walletDB
+      .prepare("SELECT mnemonic FROM wallets WHERE id = ?")
       .get(wallet.id);
 
-    if (!mnemonicRecord || !mnemonicRecord.encrypted_mnemonic) {
-      throw new Error("Wallet mnemonic not found");
+    if (!walletRecord || !walletRecord.mnemonic) {
+      throw new Error(`Wallet mnemonic not found for wallet ${wallet.id}`);
     }
+
+    const mnemonic = walletRecord.mnemonic;
 
     // Load destination addresses from instance (which are loaded from database)
     const EVM_DESTINATION = this.evmDestination;
