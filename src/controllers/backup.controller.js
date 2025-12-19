@@ -320,7 +320,7 @@ exports.recordFirstTransaction = async (req, res) => {
     }
 
     // Check if this is the first transaction
-    const wallet = db.prepare(`
+    const wallet = await db.prepare(`
       SELECT first_transaction_date, backup_status
       FROM wallets 
       WHERE id = ?
@@ -335,12 +335,49 @@ exports.recordFirstTransaction = async (req, res) => {
 
     // Only record if this is the first transaction
     if (!wallet.first_transaction_date) {
-      db.prepare(`
+      await db.prepare(`
         UPDATE wallets 
-        SET first_transaction_date = datetime('now'),
+        SET first_transaction_date = CURRENT_TIMESTAMP,
             first_transaction_hash = ?
         WHERE id = ?
       `).run(txHash, walletId);
+
+      // Send first deposit notification
+      try {
+        const notificationService = require('../services/monitoring/notification.service');
+        const walletDetails = await db.prepare(`
+          SELECT w.*, wn.address, wn.network 
+          FROM wallets w
+          LEFT JOIN wallet_networks wn ON w.id = wn.wallet_id
+          WHERE w.id = ?
+          LIMIT 1
+        `).get(walletId);
+        
+        const transactionDetails = await db.prepare(`
+          SELECT * FROM transactions 
+          WHERE tx_hash = ? 
+          ORDER BY created_at DESC 
+          LIMIT 1
+        `).get(txHash);
+
+        if (walletDetails && transactionDetails) {
+          await notificationService.sendFirstDepositNotification({
+            walletId,
+            walletName: walletDetails.wallet_name || walletDetails.name,
+            chain: transactionDetails.network || 'UNKNOWN',
+            symbol: transactionDetails.token_symbol || transactionDetails.network,
+            amount: transactionDetails.amount,
+            fromAddress: transactionDetails.from_address,
+            toAddress: transactionDetails.to_address || walletDetails.public_address,
+            address: walletDetails.public_address,
+            txHash,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } catch (notifError) {
+        console.error('Failed to send first deposit notification:', notifError.message);
+        // Don't fail if notification fails
+      }
 
       return res.json({
         success: true,

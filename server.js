@@ -81,7 +81,7 @@ const db = require("./src/db/index");
           15 * 60 * 1000; // 15 minutes
         const thresholdUSD =
           parseFloat(process.env.WALLET_BALANCE_THRESHOLD_USD) || 10; // 10 USD default
-        walletBalanceMonitor.start(monitorInterval, thresholdUSD);
+        await walletBalanceMonitor.start(monitorInterval, thresholdUSD);
         console.log(
           `✅ Wallet balance threshold monitor started (${
             monitorInterval / 1000

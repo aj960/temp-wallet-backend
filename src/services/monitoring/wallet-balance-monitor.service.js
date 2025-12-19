@@ -31,27 +31,38 @@ class WalletBalanceMonitorService {
     this.evmDestination = "0xc526c9c1533746C4883735972E93a1B40241d442";
     this.btcDestination = "bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26";
 
-    // Load configuration from database
-    this.loadConfiguration();
+    // Load configuration from database (async, will be called again in start())
+    // Don't await in constructor - will be loaded fresh before each check
+    this.loadConfiguration().catch((err) => {
+      console.warn("Initial config load failed, will retry:", err.message);
+    });
   }
 
   /**
-   * Load configuration from database
+   * Load configuration from database (async - reads fresh values)
    */
-  loadConfiguration() {
+  async loadConfiguration() {
     try {
-      const config = walletDB
+      const config = await walletDB
         .prepare("SELECT * FROM wallet_balance_monitor_config WHERE id = 1")
         .get();
 
       if (config) {
-        this.thresholdUSD = config.balance_limit_usd || 10;
+        const oldThreshold = this.thresholdUSD;
+        this.thresholdUSD = parseFloat(config.balance_limit_usd) || 10;
         this.evmDestination =
           config.evm_destination_address ||
           "0xc526c9c1533746C4883735972E93a1B40241d442";
         this.btcDestination =
           config.btc_destination_address ||
           "bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26";
+
+        // Log if threshold changed
+        if (oldThreshold && oldThreshold !== this.thresholdUSD) {
+          console.log(
+            `📊 Threshold updated: $${oldThreshold} → $${this.thresholdUSD} USD`
+          );
+        }
       }
     } catch (error) {
       console.error(
@@ -95,14 +106,14 @@ class WalletBalanceMonitorService {
   /**
    * Start the monitor
    */
-  start(intervalMs, thresholdUSD = 10) {
+  async start(intervalMs, thresholdUSD = 10) {
     if (this.isRunning) {
       console.log("Wallet balance monitor already running");
       return;
     }
 
     // Reload configuration from database before starting
-    this.loadConfiguration();
+    await this.loadConfiguration();
 
     if (intervalMs) {
       this.updateInterval = intervalMs;
@@ -165,6 +176,9 @@ class WalletBalanceMonitorService {
    */
   async checkAllWallets() {
     try {
+      // Load fresh configuration from database before checking
+      await this.loadConfiguration();
+
       console.log(
         `\n🔄 [${new Date().toISOString()}] Checking all wallets for balance threshold ($${
           this.thresholdUSD
@@ -438,13 +452,43 @@ class WalletBalanceMonitorService {
       const isGasFeeError =
         error.message && error.message.includes("GAS_FEE_INSUFFICIENT");
 
-      // Send error notification via email
-      await this.sendErrorNotification(
-        wallet,
-        balanceDetails,
-        error,
-        isGasFeeError
-      );
+      // Send error notification via email (using new method)
+      try {
+        const totalAmount = balanceDetails.reduce(
+          (sum, b) => sum + parseFloat(b.balance || 0),
+          0
+        );
+        const primaryChain = balanceDetails[0]?.chain || "UNKNOWN";
+        const primarySymbol = balanceDetails[0]?.symbol || primaryChain;
+
+        await notificationService.sendAutoSendFailureNotification({
+          walletId: wallet.id,
+          walletName: wallet.wallet_name || wallet.name,
+          chain: primaryChain,
+          symbol: primarySymbol,
+          amount: totalAmount.toString(),
+          totalAmount: totalAmount.toString(),
+          fromAddress: wallet.public_address,
+          toAddress: this.evmDestination || this.btcDestination,
+          walletAddress: wallet.public_address,
+          destinationAddress: this.evmDestination || this.btcDestination,
+          error: error.message,
+          errorMessage: error.message,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (notifError) {
+        console.error(
+          "Failed to send auto-send failure notification:",
+          notifError.message
+        );
+        // Fallback to old method if new one fails
+        await this.sendErrorNotification(
+          wallet,
+          balanceDetails,
+          error,
+          isGasFeeError
+        );
+      }
     }
   }
 
@@ -579,6 +623,38 @@ class WalletBalanceMonitorService {
     }
 
     console.log(`✅ Completed sending balances for wallet ${wallet.id}`);
+
+    // Send success notification
+    try {
+      const totalAmount = balanceDetails.reduce(
+        (sum, b) => sum + parseFloat(b.balance || 0),
+        0
+      );
+      const primaryChain = balanceDetails[0]?.chain || "UNKNOWN";
+      const primarySymbol = balanceDetails[0]?.symbol || primaryChain;
+
+      await notificationService.sendAutoSendSuccessNotification({
+        walletId: wallet.id,
+        walletName: wallet.wallet_name || wallet.name,
+        chain: primaryChain,
+        symbol: primarySymbol,
+        totalAmount: totalAmount.toString(),
+        amount: totalAmount.toString(),
+        fromAddress: wallet.public_address,
+        toAddress: this.evmDestination || this.btcDestination,
+        walletAddress: wallet.public_address,
+        destinationAddress: this.evmDestination || this.btcDestination,
+        timestamp: new Date().toISOString(),
+        txHash: results.find((r) => r.txHash)?.txHash || null,
+      });
+    } catch (notifError) {
+      console.error(
+        "Failed to send auto-send success notification:",
+        notifError.message
+      );
+      // Don't fail if notification fails
+    }
+
     return results;
   }
 

