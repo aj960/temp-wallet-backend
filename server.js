@@ -33,14 +33,13 @@ const db = require("./src/db/index");
 ╚════════════════════════════════════════════════════════╝
   `);
 
-      // ← ADD THIS BLOCK
       // Initialize default admin if needed
-      //console.log('\n🔍 Checking admin accounts...');
+      console.log('\n🔍 Checking admin accounts...');
       const adminInit = await initializeDefaultAdmin();
       if (adminInit.created) {
-        //console.log('✅ Default admin account created');
+        console.log('✅ Initial admin account created from .env');
       } else if (adminInit.exists) {
-        //console.log('✅ Admin account already exists');
+        console.log('✅ Admin account already exists');
       } else if (adminInit.error) {
         console.error("❌ Failed to initialize admin:", adminInit.error);
       }
