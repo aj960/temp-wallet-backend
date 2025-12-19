@@ -14,53 +14,131 @@ exports.registerAdmin = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
 
-    if (!name || !email || !password) {
-      return error(res, "All fields required");
+    // Validate required fields
+    const missingFields = [];
+    if (!name || !name.trim()) missingFields.push("name");
+    if (!email || !email.trim()) missingFields.push("email");
+    if (!password) missingFields.push("password");
+
+    if (missingFields.length > 0) {
+      return error(
+        res,
+        `${missingFields.join(", ")} ${
+          missingFields.length > 1 ? "are" : "is"
+        } required`
+      );
+    }
+
+    // Trim and normalize email
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedName = name.trim();
+
+    // Validate email format (basic check)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      return error(
+        res,
+        "Invalid email format. Please provide a valid email address."
+      );
+    }
+
+    // Validate password length
+    if (password.length < 6) {
+      return error(res, "Password must be at least 6 characters long.");
+    }
+
+    // Check if email already exists
+    try {
+      const existingAdmin = await db
+        .prepare("SELECT id, email FROM admins WHERE email = ?")
+        .get(trimmedEmail);
+      if (existingAdmin) {
+        console.log(
+          `❌ Registration attempt with existing email: ${trimmedEmail}`
+        );
+        return error(
+          res,
+          "Email already exists. Please use a different email address."
+        );
+      }
+    } catch (checkError) {
+      console.error("❌ Error checking existing email:", checkError.message);
+      return error(
+        res,
+        "Database error occurred while checking email. Please try again."
+      );
     }
 
     // Hash password
-    const hashedPassword = await authService.hashPassword(password);
+    let hashedPassword;
+    try {
+      hashedPassword = await authService.hashPassword(password);
+    } catch (hashError) {
+      console.error("❌ Password hashing error:", hashError.message);
+      return error(res, "Failed to process password. Please try again.");
+    }
 
-    const stmt = db.prepare(
-      "INSERT INTO admins (name, email, password, role) VALUES (?, ?, ?, ?)"
-    );
+    // Insert admin
+    let info;
+    try {
+      const stmt = db.prepare(
+        "INSERT INTO admins (name, email, password, role) VALUES (?, ?, ?, ?)"
+      );
+      info = await stmt.run(
+        trimmedName,
+        trimmedEmail,
+        hashedPassword,
+        role || "superadmin"
+      );
+    } catch (insertError) {
+      console.error("❌ Error inserting admin:", {
+        message: insertError.message,
+        code: insertError.code,
+        sqlState: insertError.sqlState,
+      });
 
-    const info = await stmt.run(
-      name,
-      email,
-      hashedPassword,
-      role || "superadmin"
-    );
+      if (
+        insertError.message.includes("UNIQUE constraint") ||
+        insertError.message.includes("Duplicate entry") ||
+        insertError.code === "ER_DUP_ENTRY"
+      ) {
+        return error(
+          res,
+          "Email already exists. Please use a different email address."
+        );
+      }
 
+      return error(res, "Failed to register admin. Please try again later.");
+    }
+
+    // Log successful registration
     auditLogger.logSecurityEvent({
       type: "ADMIN_REGISTERED",
       adminId: info.lastInsertRowid,
-      email,
+      email: trimmedEmail,
       role: role || "superadmin",
       ip: req.ip,
     });
 
-    success(res, {
+    console.log(`✅ Admin registered successfully: ${trimmedEmail}`);
+
+    return success(res, {
       message: "Admin registered successfully",
       id: info.lastInsertRowid,
+      email: trimmedEmail,
     });
   } catch (e) {
-    console.error("\n❌ Register Error:", {
+    console.error("\n❌ Unexpected Register Error:", {
       message: e.message,
       stack: e.stack,
       email: req.body?.email,
       endpoint: req.originalUrl,
     });
-
-    if (
-      e.message.includes("UNIQUE constraint") ||
-      e.message.includes("Duplicate entry") ||
-      e.code === "ER_DUP_ENTRY"
-    ) {
-      return error(res, "Email already exists");
-    }
     auditLogger.logError(e, { controller: "registerAdmin" });
-    error(res, e.message);
+    return error(
+      res,
+      "An unexpected error occurred during registration. Please try again later."
+    );
   }
 };
 
@@ -101,9 +179,21 @@ exports.loginAdmin = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    // Validate input
     if (!email || !password) {
-      return error(res, "Email and password required");
+      const missingFields = [];
+      if (!email) missingFields.push("email");
+      if (!password) missingFields.push("password");
+      return error(
+        res,
+        `${missingFields.join(" and ")} ${
+          missingFields.length > 1 ? "are" : "is"
+        } required`
+      );
     }
+
+    // Trim email
+    const trimmedEmail = email.trim().toLowerCase();
 
     // Check if admins table exists
     const tableExists = await checkAdminsTableExists();
@@ -112,64 +202,91 @@ exports.loginAdmin = async (req, res) => {
       return error(res, "Database not initialized. Please run database setup.");
     }
 
-    // Check if user exists
-    const userExists = await checkUserExists(email);
-    if (!userExists) {
-      console.log(`❌ User with email ${email} does not exist`);
-      auditLogger.logAuthAttempt({
-        success: false,
-        email,
-        ip: req.ip,
-        userAgent: req.headers["user-agent"],
+    // Get admin by email
+    let admin;
+    try {
+      const stmt = db.prepare("SELECT * FROM admins WHERE email = ?");
+      admin = await stmt.get(trimmedEmail);
+    } catch (dbError) {
+      console.error("❌ Database error during login:", {
+        message: dbError.message,
+        sqlState: dbError.sqlState,
+        sqlMessage: dbError.sqlMessage,
       });
-      return error(res, "Invalid credentials");
+      return error(res, "Database error occurred. Please try again later.");
     }
 
-    // Get admin with proper parameter handling
-    const stmt = db.prepare("SELECT * FROM admins WHERE email = ?");
-    const admin = await stmt.get(email);
-
+    // Check if user exists
     if (!admin) {
+      console.log(`❌ Login attempt with non-existent email: ${trimmedEmail}`);
       auditLogger.logAuthAttempt({
         success: false,
-        email,
+        email: trimmedEmail,
+        reason: "EMAIL_NOT_FOUND",
         ip: req.ip,
         userAgent: req.headers["user-agent"],
       });
-      return error(res, "Invalid credentials");
+      return error(res, "Email not found. Please check your email address.");
     }
 
     // Compare password
-    const isValidPassword = await authService.comparePassword(
-      password,
-      admin.password
-    );
+    let isValidPassword = false;
+    try {
+      isValidPassword = await authService.comparePassword(
+        password,
+        admin.password
+      );
+    } catch (compareError) {
+      console.error("❌ Password comparison error:", compareError.message);
+      return error(res, "Authentication error occurred. Please try again.");
+    }
 
     if (!isValidPassword) {
+      console.log(
+        `❌ Login attempt with incorrect password for email: ${trimmedEmail}`
+      );
       auditLogger.logAuthAttempt({
         success: false,
-        email,
+        email: trimmedEmail,
+        reason: "INVALID_PASSWORD",
         ip: req.ip,
         userAgent: req.headers["user-agent"],
       });
-      return error(res, "Invalid credentials");
+      return error(
+        res,
+        "Incorrect password. Please check your password and try again."
+      );
     }
 
     // Generate tokens
-    const tokens = jwtService.generateTokenPair({
-      id: admin.id,
-      email: admin.email,
-      role: admin.role,
-    });
+    let tokens;
+    try {
+      tokens = jwtService.generateTokenPair({
+        id: admin.id,
+        email: admin.email,
+        role: admin.role,
+      });
+    } catch (tokenError) {
+      console.error("❌ Token generation error:", tokenError.message);
+      return error(
+        res,
+        "Failed to generate authentication tokens. Please try again."
+      );
+    }
 
+    // Log successful login
     auditLogger.logAuthAttempt({
       success: true,
-      email,
+      email: trimmedEmail,
+      adminId: admin.id,
       ip: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
-    success(res, {
+    console.log(`✅ Successful login for: ${trimmedEmail}`);
+
+    // Return success response
+    return success(res, {
       message: "Login successful",
       admin: {
         id: admin.id,
@@ -180,7 +297,7 @@ exports.loginAdmin = async (req, res) => {
       ...tokens,
     });
   } catch (e) {
-    console.error("\n❌ Login Error:", {
+    console.error("\n❌ Unexpected Login Error:", {
       message: e.message,
       stack: e.stack,
       email: req.body?.email,
@@ -189,7 +306,10 @@ exports.loginAdmin = async (req, res) => {
       sqlMessage: e.sqlMessage,
     });
     auditLogger.logError(e, { controller: "loginAdmin" });
-    error(res, e.message);
+    return error(
+      res,
+      "An unexpected error occurred during login. Please try again later."
+    );
   }
 };
 
