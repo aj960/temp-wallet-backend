@@ -156,8 +156,6 @@ app.use(logger);
 // ==========================================
 
 // Apply specific rate limiters to sensitive routes
-app.use("/admin/login", rateLimiter.authLimiter);
-app.use("/admin/register", rateLimiter.authLimiter);
 app.use("/device-passcodes/validate", rateLimiter.devicePasscodeLimiter);
 app.use("/wallet/create", rateLimiter.walletCreationLimiter);
 app.use("/multichain/wallet/create", rateLimiter.walletCreationLimiter);

@@ -1,5 +1,5 @@
-const bcrypt = require('bcrypt');
-const crypto = require('crypto');
+const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 
 class AuthService {
   constructor() {
@@ -16,8 +16,6 @@ class AuthService {
   async hashPassword(password) {
     try {
       // Validate password strength
-      this.validatePasswordStrength(password);
-      
       const salt = await bcrypt.genSalt(this.saltRounds);
       return await bcrypt.hash(password, salt);
     } catch (error) {
@@ -35,7 +33,7 @@ class AuthService {
     try {
       return await bcrypt.compare(password, hash);
     } catch (error) {
-      throw new Error('Password comparison failed');
+      throw new Error("Password comparison failed");
     }
   }
 
@@ -46,7 +44,7 @@ class AuthService {
    */
   validatePasswordStrength(password) {
     if (!password || password.length < 8) {
-      throw new Error('Password must be at least 8 characters long');
+      throw new Error("Password must be at least 8 characters long");
     }
 
     const hasUpperCase = /[A-Z]/.test(password);
@@ -56,14 +54,18 @@ class AuthService {
 
     if (!hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
       throw new Error(
-        'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'
+        "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
       );
     }
 
     // Check for common passwords
-    const commonPasswords = ['password', '12345678', 'qwerty', 'abc123'];
-    if (commonPasswords.some(common => password.toLowerCase().includes(common))) {
-      throw new Error('Password is too common. Please choose a stronger password');
+    const commonPasswords = ["password", "12345678", "qwerty", "abc123"];
+    if (
+      commonPasswords.some((common) => password.toLowerCase().includes(common))
+    ) {
+      throw new Error(
+        "Password is too common. Please choose a stronger password"
+      );
     }
   }
 
@@ -72,7 +74,7 @@ class AuthService {
    * @returns {string} - API key
    */
   generateApiKey() {
-    return `tw_${crypto.randomBytes(32).toString('hex')}`;
+    return `tw_${crypto.randomBytes(32).toString("hex")}`;
   }
 
   /**
@@ -82,7 +84,7 @@ class AuthService {
    */
   async hashPasscode(passcode) {
     if (!passcode || passcode.length < 4) {
-      throw new Error('Passcode must be at least 4 characters');
+      throw new Error("Passcode must be at least 4 characters");
     }
     return await bcrypt.hash(passcode, 10); // Lower rounds for passcodes
   }
@@ -103,20 +105,16 @@ class AuthService {
    * @returns {string} - OTP
    */
   generateOTP(length = 6) {
-    const digits = '0123456789';
-    let otp = '';
-    
+    const digits = "0123456789";
+    let otp = "";
+
     for (let i = 0; i < length; i++) {
       const randomIndex = crypto.randomInt(0, digits.length);
       otp += digits[randomIndex];
     }
-    
+
     return otp;
   }
 }
 
 module.exports = new AuthService();
-
-
-
-
