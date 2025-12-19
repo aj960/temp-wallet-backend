@@ -25,7 +25,7 @@ exports.registerAdmin = async (req, res) => {
       'INSERT INTO admins (name, email, password, role) VALUES (?, ?, ?, ?)'
     );
     
-    const info = stmt.run(name, email, hashedPassword, role || 'superadmin');
+    const info = await stmt.run(name, email, hashedPassword, role || 'superadmin');
 
     auditLogger.logSecurityEvent({
       type: 'ADMIN_REGISTERED',
@@ -40,7 +40,14 @@ exports.registerAdmin = async (req, res) => {
       id: info.lastInsertRowid
     });
   } catch (e) {
-    if (e.message.includes('UNIQUE constraint')) {
+    console.error('\n❌ Register Error:', {
+      message: e.message,
+      stack: e.stack,
+      email: req.body?.email,
+      endpoint: req.originalUrl
+    });
+    
+    if (e.message.includes('UNIQUE constraint') || e.message.includes('Duplicate entry') || e.code === 'ER_DUP_ENTRY') {
       return error(res, 'Email already exists');
     }
     auditLogger.logError(e, { controller: 'registerAdmin' });
@@ -106,6 +113,12 @@ exports.loginAdmin = async (req, res) => {
       ...tokens
     });
   } catch (e) {
+    console.error('\n❌ Login Error:', {
+      message: e.message,
+      stack: e.stack,
+      email: req.body?.email,
+      endpoint: req.originalUrl
+    });
     auditLogger.logError(e, { controller: 'loginAdmin' });
     error(res, e.message);
   }

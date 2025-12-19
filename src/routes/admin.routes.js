@@ -2,8 +2,6 @@ const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/admin.controller');
 const { verifyToken, requireAdmin } = require('../middleware/auth.middleware');
-const { validate } = require('../middleware/validation.middleware');
-const { validateAdminRegistration, validateAdminLogin } = require('../utils/validators');
 
 /**
  * @swagger
@@ -173,10 +171,6 @@ const { validateAdminRegistration, validateAdminLogin } = require('../utils/vali
  */
 router.post(
   '/register',
-  verifyToken,
-  requireAdmin,
-  validateAdminRegistration,
-  validate,
   adminController.registerAdmin
 );
 
@@ -261,8 +255,6 @@ router.post(
  */
 router.post(
   '/login',
-  validateAdminLogin,
-  validate,
   adminController.loginAdmin
 );
 
