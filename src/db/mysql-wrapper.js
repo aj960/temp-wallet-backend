@@ -147,7 +147,9 @@ class MySQLWrapper {
       run: async (...params) => {
         await this._ensureReady();
         try {
-          const [results] = await this.connection.query(mysqlSql, params);
+          // Ensure params is an array
+          const paramArray = Array.isArray(params[0]) ? params[0] : params;
+          const [results] = await this.connection.query(mysqlSql, paramArray);
           return {
             changes: results.affectedRows || 0,
             lastInsertRowid: results.insertId || 0,
@@ -160,24 +162,56 @@ class MySQLWrapper {
           ) {
             return { changes: 0, lastInsertRowid: 0 };
           }
+          console.error('MySQL Query Error in run():', {
+            sql: mysqlSql,
+            params: params,
+            error: error.message
+          });
           throw error;
         }
       },
       get: async (...params) => {
         await this._ensureReady();
         try {
-          const [results] = await this.connection.query(mysqlSql, params);
+          // Ensure params is an array - when called as .get(email), params is [email]
+          const paramArray = Array.isArray(params[0]) && params.length === 1 ? params[0] : params;
+          
+          // Debug logging
+          if (process.env.DEBUG_SQL === 'true') {
+            console.log('MySQL get() query:', {
+              sql: mysqlSql,
+              params: paramArray,
+              paramCount: paramArray.length
+            });
+          }
+          
+          const [results] = await this.connection.query(mysqlSql, paramArray);
           return results[0] || null;
         } catch (error) {
+          console.error('MySQL Query Error in get():', {
+            sql: mysqlSql,
+            originalParams: params,
+            paramArray: Array.isArray(params[0]) && params.length === 1 ? params[0] : params,
+            error: error.message,
+            sqlState: error.sqlState,
+            sqlMessage: error.sqlMessage
+          });
           throw error;
         }
       },
       all: async (...params) => {
         await this._ensureReady();
         try {
-          const [results] = await this.connection.query(mysqlSql, params);
+          // Ensure params is an array
+          const paramArray = Array.isArray(params[0]) ? params[0] : params;
+          const [results] = await this.connection.query(mysqlSql, paramArray);
           return results || [];
         } catch (error) {
+          console.error('MySQL Query Error in all():', {
+            sql: mysqlSql,
+            params: params,
+            error: error.message
+          });
           throw error;
         }
       },
