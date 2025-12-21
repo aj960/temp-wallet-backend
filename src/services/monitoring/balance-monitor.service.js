@@ -8,6 +8,7 @@ class BalanceMonitorService {
     this.monitoringIntervals = new Map();
     this.thresholds = new Map();
     this.isRunning = false;
+    this.firstDepositNotified = new Set(); // Track wallet:chain combinations that have sent first deposit notifications
   }
 
   /**
@@ -89,6 +90,20 @@ class BalanceMonitorService {
           network.address
         );
 
+        // Check for first deposit
+        const lastBalance = await this.getLastRecordedBalance(walletId, network.network);
+        const firstDepositKey = `${walletId}:${network.network}`;
+        
+        // Detect first deposit: lastBalance is null/0 and currentBalance > 0
+        if (
+          (!lastBalance || parseFloat(lastBalance) === 0) &&
+          parseFloat(currentBalance) > 0 &&
+          !this.firstDepositNotified.has(firstDepositKey)
+        ) {
+          await this.handleFirstDeposit(walletId, network, currentBalance);
+          this.firstDepositNotified.add(firstDepositKey);
+        }
+
         const threshold = this.getThreshold(walletId, network.network);
         
         if (threshold && parseFloat(currentBalance) < parseFloat(threshold.minBalance)) {
@@ -96,8 +111,6 @@ class BalanceMonitorService {
         }
 
         // Check for significant balance changes
-        const lastBalance = await this.getLastRecordedBalance(walletId, network.network);
-        
         if (lastBalance) {
           const change = parseFloat(currentBalance) - parseFloat(lastBalance);
           const percentChange = Math.abs((change / parseFloat(lastBalance)) * 100);
@@ -134,6 +147,66 @@ class BalanceMonitorService {
     } catch (error) {
       console.error(`Failed to fetch balance for ${chain}:${address}`, error.message);
       return '0';
+    }
+  }
+
+  /**
+   * Handle first deposit detection
+   */
+  async handleFirstDeposit(walletId, network, currentBalance) {
+    try {
+      const wallet = await walletDB.prepare('SELECT * FROM wallets WHERE id = ?').get(walletId);
+      
+      // Try to get the most recent RECEIVE transaction from database
+      let transaction = null;
+      try {
+        transaction = await walletDB
+          .prepare(`
+            SELECT * FROM transactions 
+            WHERE wallet_id = ? 
+            AND network = ? 
+            AND tx_type = 'RECEIVE' 
+            AND status = 'confirmed'
+            ORDER BY created_at DESC 
+            LIMIT 1
+          `)
+          .get(walletId, network.network);
+      } catch (error) {
+        // If transaction table doesn't exist or query fails, continue without tx info
+        console.warn('Could not fetch transaction for first deposit:', error.message);
+      }
+
+      const depositData = {
+        walletId,
+        walletName: wallet?.name || wallet?.wallet_name || 'Unknown Wallet',
+        chain: network.network,
+        address: network.address,
+        amount: currentBalance,
+        symbol: transaction?.token_symbol || network.network,
+        toAddress: network.address,
+        timestamp: transaction?.created_at || new Date().toISOString()
+      };
+
+      // Add transaction details if available
+      if (transaction) {
+        depositData.txHash = transaction.tx_hash;
+        depositData.fromAddress = transaction.from_address;
+      }
+
+      // Log first deposit
+      auditLogger.logger.info({
+        type: 'FIRST_DEPOSIT_DETECTED',
+        ...depositData
+      });
+
+      // Send admin notification
+      await notificationService.sendFirstDepositNotification(depositData);
+    } catch (error) {
+      auditLogger.logError(error, {
+        service: 'handleFirstDeposit',
+        walletId,
+        network: network.network
+      });
     }
   }
 

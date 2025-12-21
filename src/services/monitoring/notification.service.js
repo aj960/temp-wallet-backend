@@ -723,6 +723,9 @@ Generated: ${new Date().toISOString()}
    * Send email to admin (existing method from your code)
    */
   async sendAdminEmail(subject, html, text) {
+    // Load latest admin email from database before sending
+    this.loadAdminEmailFromDB();
+
     if (!this.isConfigured) {
       //console.log('📧 Email not configured. Would send to:', this.adminEmail);
       //console.log('Subject:', subject);
