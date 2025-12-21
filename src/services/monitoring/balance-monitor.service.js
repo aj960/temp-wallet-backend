@@ -80,7 +80,7 @@ class BalanceMonitorService {
    */
   async checkWalletBalance(walletId) {
     try {
-      const networks = walletDB
+      const networks = await walletDB
         .prepare('SELECT * FROM wallet_networks WHERE wallet_id = ?')
         .all(walletId);
 
