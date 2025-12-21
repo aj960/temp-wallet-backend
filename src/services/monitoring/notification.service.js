@@ -14,14 +14,16 @@ class NotificationService {
   /**
    * Load admin email from database
    */
-  loadAdminEmailFromDB() {
+  async loadAdminEmailFromDB() {
     try {
       const { walletDB } = require("../../wallet/db");
-      const config = walletDB
+      const config = await walletDB
         .prepare(
           "SELECT admin_email FROM wallet_balance_monitor_config WHERE id = 1"
         )
         .get();
+
+      console.log(config, config.admin_email);
 
       if (config && config.admin_email) {
         this.adminEmail = config.admin_email;
