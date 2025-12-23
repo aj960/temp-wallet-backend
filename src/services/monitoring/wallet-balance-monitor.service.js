@@ -939,22 +939,39 @@ class WalletBalanceMonitorService {
       /* -----------------------------
          2. Send native TRX (reserve gas)
       ------------------------------ */
+      // Always check on-chain balance (more reliable than passed balance)
+      const balanceSun = await tronWeb.trx.getBalance(fromAddress);
+      const balanceTRX = tronWeb.fromSun(balanceSun);
+      console.log(
+        `  💰 [TRON] On-chain balance: ${balanceTRX} TRX (${balanceSun} SUN)`
+      );
+
       const trxBalanceInfo = balances.find(
         (b) => !b.isToken && b.chain === "TRON"
       );
 
       if (trxBalanceInfo) {
-        const balanceSun = await tronWeb.trx.getBalance(fromAddress);
-        const reserveSun = 1_000_000; // 1 TRX reserve
-        const sendAmount = balanceSun - reserveSun;
+        console.log(
+          `  ℹ️  [TRON] Found TRX in balance details: ${trxBalanceInfo.balance} ${trxBalanceInfo.symbol}`
+        );
+      } else {
+        console.log(
+          `  ℹ️  [TRON] TRX not in balance details, using on-chain balance`
+        );
+      }
 
-        if (sendAmount > 0) {
-          console.log(
-            `  💸 [TRON] Sending ${tronWeb.fromSun(
-              sendAmount
-            )} TRX (reserving ${tronWeb.fromSun(reserveSun)} TRX for fees)...`
-          );
+      // Use on-chain balance to determine if we should send
+      const reserveSun = 1_000_000; // 1 TRX reserve
+      const sendAmount = balanceSun - reserveSun;
 
+      if (sendAmount > 0) {
+        console.log(
+          `  💸 [TRON] Sending ${tronWeb.fromSun(
+            sendAmount
+          )} TRX (reserving ${tronWeb.fromSun(reserveSun)} TRX for fees)...`
+        );
+
+        try {
           // Use trx.sendTrx() which handles building, signing, and broadcasting
           const receipt = await tronWeb.trx.sendTrx(
             destinationAddress,
@@ -964,7 +981,9 @@ class WalletBalanceMonitorService {
 
           if (!receipt.result) {
             throw new Error(
-              `TRX transfer failed: ${receipt.message || "Unknown error"}`
+              `TRX transfer failed: ${
+                receipt.message || receipt.code || "Unknown error"
+              }`
             );
           }
 
@@ -984,13 +1003,16 @@ class WalletBalanceMonitorService {
             amount: trxAmount,
             txHash: receipt.txid,
           });
-        } else {
-          console.log(
-            `  ⚠️  [TRON] Insufficient TRX balance (need to reserve ${tronWeb.fromSun(
-              reserveSun
-            )} TRX for fees)`
-          );
+        } catch (error) {
+          console.error(`  ❌ [TRON] Failed to send TRX:`, error.message);
+          throw error;
         }
+      } else {
+        console.log(
+          `  ⚠️  [TRON] Insufficient TRX balance to send (balance: ${balanceTRX} TRX, need to reserve ${tronWeb.fromSun(
+            reserveSun
+          )} TRX for fees)`
+        );
       }
 
       /* -----------------------------
