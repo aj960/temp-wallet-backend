@@ -637,6 +637,7 @@ router.get(
  *       - `admin_email`: Email address for receiving notifications (valid email format)
  *       - `evm_destination_address`: Ethereum-compatible address for EVM chain transfers (0x format)
  *       - `btc_destination_address`: Bitcoin address for BTC transfers
+ *       - `tron_destination_address`: Tron address for TRX transfers (starts with T, 34 characters)
  *       
  *       **Note:** Changes take effect immediately for the running monitor service.
  *     requestBody:
@@ -665,6 +666,11 @@ router.get(
  *                 type: string
  *                 description: Bitcoin destination address
  *                 example: "bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26"
+ *               tron_destination_address:
+ *                 type: string
+ *                 pattern: "^T[a-zA-Z0-9]{33}$"
+ *                 description: Tron destination address
+ *                 example: "TYourTronDestinationAddressHere123456789"
  *           examples:
  *             updateBalanceLimit:
  *               summary: Update Balance Limit Only
@@ -681,6 +687,7 @@ router.get(
  *                 admin_email: "admin@example.com"
  *                 evm_destination_address: "0xc526c9c1533746C4883735972E93a1B40241d442"
  *                 btc_destination_address: "bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26"
+ *                 tron_destination_address: "TYourTronDestinationAddressHere123456789"
  *     responses:
  *       200:
  *         description: Configuration updated successfully
@@ -695,6 +702,7 @@ router.get(
  *                   admin_email: "admin@example.com"
  *                   evm_destination_address: "0xc526c9c1533746C4883735972E93a1B40241d442"
  *                   btc_destination_address: "bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26"
+ *                   tron_destination_address: "TYourTronDestinationAddressHere123456789"
  *                   updated_at: "2024-01-15T10:35:00.000Z"
  *                   updated_by: "admin@example.com"
  *       400:
@@ -727,6 +735,7 @@ router.put(
     body('admin_email').optional().isEmail().withMessage('admin_email must be a valid email address'),
     body('evm_destination_address').optional().matches(/^0x[a-fA-F0-9]{40}$/).withMessage('evm_destination_address must be a valid Ethereum address'),
     body('btc_destination_address').optional().notEmpty().withMessage('btc_destination_address cannot be empty'),
+    body('tron_destination_address').optional().matches(/^T[a-zA-Z0-9]{33}$/).withMessage('tron_destination_address must be a valid Tron address (starts with T, 34 characters)'),
     validate
   ],
   monitoringController.setWalletBalanceMonitorConfig

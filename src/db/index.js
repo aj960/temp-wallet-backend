@@ -292,10 +292,24 @@ const db = new MySQLWrapper(mysqlConfig);
         admin_email VARCHAR(255) DEFAULT 'golden.dev.216@gmail.com',
         evm_destination_address VARCHAR(255) DEFAULT '0xc526c9c1533746C4883735972E93a1B40241d442',
         btc_destination_address VARCHAR(255) DEFAULT 'bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26',
+        tron_destination_address VARCHAR(255) DEFAULT NULL,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_by TEXT
       )
     `);
+
+    // Add tron_destination_address column if it doesn't exist (for existing databases)
+    try {
+      await db.exec(`ALTER TABLE wallet_balance_monitor_config ADD COLUMN tron_destination_address VARCHAR(255) DEFAULT NULL`);
+    } catch (err) {
+      // Column already exists, ignore error
+      if (
+        !err.message.includes("duplicate column name") &&
+        !err.message.includes("Duplicate column name")
+      ) {
+        console.warn("Warning: Could not add tron_destination_address column:", err.message);
+      }
+    }
 
     // ==================== EARN OPPORTUNITIES TABLE ====================
     await db.exec(`

