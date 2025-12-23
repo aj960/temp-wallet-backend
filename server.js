@@ -25,7 +25,7 @@ const db = require("./src/db/index");
       console.log(`
 ╔════════════════════════════════════════════════════════╗
 ║                                                        ║
-║     🔐 TrustWallet Multi-Chain Backend                ║
+║     🔐 TrustWallet Multi-Chain Backend   adfasdfasdfasdfasdfasdf           ║
 ║                                                        ║
 ║     Server: ${HOST}:${PORT}                            ║
 ║     Environment: ${process.env.NODE_ENV || "development"}
