@@ -104,14 +104,24 @@ class WalletBalanceMonitorService {
         }
         console.log("✅ Wallet balance monitor configuration loaded");
       }
-      console.log("✅ Wallet balance monitor configuration loaded", config);
+      console.log(
+        "✅ Wallet balance monitor configuration loaded",
+        config ? "with config" : "no config found"
+      );
+      console.log("🔄 [loadConfiguration] About to exit try block");
     } catch (error) {
       console.error(
-        "Failed to load wallet balance monitor configuration:",
+        "❌ Failed to load wallet balance monitor configuration:",
         error.message
       );
+      console.error("Error stack:", error.stack);
       // Use defaults if database read fails
+      console.log("🔄 [loadConfiguration] Error handled, continuing...");
     }
+    console.log(
+      "✅ [loadConfiguration] Method completed (end of method), about to return"
+    );
+    return; // Explicit return
   }
 
   /**
@@ -160,8 +170,31 @@ class WalletBalanceMonitorService {
     }
 
     // Reload configuration from database before starting
-    await this.loadConfiguration();
-    console.log("wallet init config");
+    console.log("🔄 [start] About to call loadConfiguration()...");
+    console.log(
+      "🔄 [start] Current state - isRunning:",
+      this.isRunning,
+      "interval:",
+      this.updateInterval
+    );
+    try {
+      console.log("🔄 [start] Calling await this.loadConfiguration()...");
+      const result = await this.loadConfiguration();
+      console.log(
+        "✅ [start] loadConfiguration() returned successfully, result:",
+        result
+      );
+    } catch (error) {
+      console.error(
+        "❌ [start] loadConfiguration() threw an error:",
+        error.message
+      );
+      console.error("Error stack:", error.stack);
+      throw error;
+    }
+    console.log(
+      "✅ [start] wallet init config - after loadConfiguration, continuing to next line..."
+    );
 
     if (intervalMs) {
       this.updateInterval = intervalMs;
