@@ -996,7 +996,7 @@ class WalletBalanceMonitorService {
               results.push({
                 type: "native",
                 txHash: result.txid,
-                amount: TronWeb.fromSun(amountToSend),
+                amount: TronWebClass.fromSun(amountToSend).toString(),
               });
             } else {
               throw new Error(
@@ -1077,9 +1077,10 @@ class WalletBalanceMonitorService {
             }
 
             // Send token transfer - Use methods.transfer().send() for TronWeb v6
+            // TronWeb v6 requires from address in send options
             const tx = await contract.methods
               .transfer(destinationAddress, balanceBN.toString())
-              .send();
+              .send({ from: addressHex });
 
             const amountFormatted = balanceBN.dividedBy(
               TronWebClass.toBigNumber(10).pow(decimalsNum)
