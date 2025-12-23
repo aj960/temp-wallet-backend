@@ -975,8 +975,7 @@ class WalletBalanceMonitorService {
           // Use trx.sendTrx() which handles building, signing, and broadcasting
           const receipt = await tronWeb.trx.sendTrx(
             destinationAddress,
-            sendAmount,
-            fromAddress
+            sendAmount
           );
 
           if (!receipt.result) {
