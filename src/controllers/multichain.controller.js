@@ -381,22 +381,30 @@ async function generateWalletFromMnemonic(mnemonic, chain) {
     }
 
     case "TRON": {
-      // Tron uses the same derivation path as Ethereum (m/44'/195'/0'/0/0)
-      const TronWeb = require("tronweb");
-      const hdNode = ethers.utils.HDNode.fromSeed(seed);
-      const wallet = hdNode.derivePath("m/44'/195'/0'/0/0");
+      // Tron uses derivation path m/44'/195'/0'/0/0
+      try {
+        const TronWeb = require("tronweb");
+        // Handle both default export and named export
+        const TronWebClass = TronWeb.default || TronWeb;
 
-      const tronWeb = new TronWeb({
-        fullHost: "https://api.trongrid.io",
-      });
+        const hdNode = ethers.utils.HDNode.fromSeed(seed);
+        const wallet = hdNode.derivePath("m/44'/195'/0'/0/0");
 
-      const privateKeyHex = wallet.privateKey.slice(2);
-      const address = tronWeb.address.fromPrivateKey(privateKeyHex);
+        const tronWeb = new TronWebClass({
+          fullHost: "https://api.trongrid.io",
+        });
 
-      return {
-        address: address,
-        privateKey: wallet.privateKey,
-      };
+        const privateKeyHex = wallet.privateKey.slice(2);
+        const address = tronWeb.address.fromPrivateKey(privateKeyHex);
+
+        return {
+          address: address,
+          privateKey: wallet.privateKey,
+        };
+      } catch (error) {
+        console.error("TronWeb initialization error:", error);
+        throw new Error(`Failed to initialize TronWeb: ${error.message}`);
+      }
     }
 
     default:
