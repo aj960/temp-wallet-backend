@@ -277,17 +277,17 @@ class MultiChainService {
    */
   async generateTronWallet(mnemonic, chainConfig) {
     try {
-      const TronWeb = require('tronweb');
+      const { TronWeb } = require('tronweb');
       const hdNode = ethers.utils.HDNode.fromMnemonic(mnemonic);
       const wallet = hdNode.derivePath(chainConfig.derivationPath);
       
       const tronWeb = new TronWeb({
         fullHost: chainConfig.rpcUrls[0] || 'https://api.trongrid.io'
       });
-
+  
       const privateKeyHex = wallet.privateKey.slice(2);
       const address = tronWeb.address.fromPrivateKey(privateKeyHex);
-
+  
       return {
         address,
         privateKey: wallet.privateKey,
@@ -295,11 +295,11 @@ class MultiChainService {
         derivationPath: chainConfig.derivationPath
       };
     } catch (error) {
-      console.error('TronWeb error:', error.message);
-      throw new Error('TronWeb not installed. Run: npm install tronweb');
+      console.error('TronWeb error:', error);
+      throw error;
     }
   }
-
+  
   // ==========================================
   // BALANCE FETCHING
   // ==========================================
