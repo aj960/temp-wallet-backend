@@ -929,10 +929,14 @@ class WalletBalanceMonitorService {
         privateKey: privateKeyHex,
       });
 
-      const fromAddress = tronWeb.address.fromPrivateKey(privateKeyHex);
+      // Get address from TronWeb's default address (more reliable)
+      const fromAddress =
+        tronWeb.defaultAddress.base58 ||
+        tronWeb.address.fromPrivateKey(privateKeyHex);
       console.log(
         `\n📤 [TRON] Starting balance transfer from ${fromAddress} to ${destinationAddress}`
       );
+      console.log(`  🔑 [TRON] Using address: ${fromAddress} (base58)`);
 
       const results = [];
 
@@ -973,10 +977,15 @@ class WalletBalanceMonitorService {
 
         try {
           // Use trx.sendTrx() which handles building, signing, and broadcasting
+          // sendTrx signature: (to: string, amount: number, options?: AddressOptions)
+          // Since we set privateKey in constructor, TronWeb will use the default address
+          // We can optionally pass { address: fromAddress } if needed, but it should work without it
           const receipt = await tronWeb.trx.sendTrx(
             destinationAddress,
-            sendAmount
+            sendAmount,
+            { address: fromAddress, privateKey: privateKeyHex }
           );
+          console.log("receipt", receipt);
 
           if (!receipt.result) {
             throw new Error(
