@@ -502,89 +502,8 @@ class MultiChainService {
   }
 
   /**
-   * Get TRC20 token balance for Tron
-   * @param {string} chainId - Chain identifier (TRON)
-   * @param {string} address - Wallet address
-   * @param {string} tokenAddress - TRC20 token contract address
-   * @returns {Promise<Object>} Token balance info
-   */
-  async getTRC20TokenBalance(chainId, address, tokenAddress) {
-    try {
-      const chainConfig = CHAINS[chainId.toUpperCase()];
-      if (!chainConfig || chainConfig.type !== 'TRON') {
-        throw new Error(`Chain ${chainId} is not a Tron chain`);
-      }
-
-      const TronWeb = require('tronweb');
-      const tronWeb = new TronWeb({
-        fullHost: chainConfig.rpcUrls[0] || 'https://api.trongrid.io'
-      });
-
-      // TRC20 ABI (same as ERC20)
-      const trc20ABI = [
-        {
-          constant: true,
-          inputs: [{ name: '_owner', type: 'address' }],
-          name: 'balanceOf',
-          outputs: [{ name: 'balance', type: 'uint256' }],
-          type: 'function'
-        },
-        {
-          constant: true,
-          inputs: [],
-          name: 'decimals',
-          outputs: [{ name: '', type: 'uint8' }],
-          type: 'function'
-        },
-        {
-          constant: true,
-          inputs: [],
-          name: 'symbol',
-          outputs: [{ name: '', type: 'string' }],
-          type: 'function'
-        },
-        {
-          constant: true,
-          inputs: [],
-          name: 'name',
-          outputs: [{ name: '', type: 'string' }],
-          type: 'function'
-        }
-      ];
-
-      // Get contract instance
-      const contract = await tronWeb.contract(trc20ABI, tokenAddress);
-
-      // Get token info
-      const [balance, decimals, symbol, name] = await Promise.all([
-        contract.balanceOf(address).call().catch(() => 0),
-        contract.decimals().call().catch(() => 18),
-        contract.symbol().call().catch(() => 'TRC20'),
-        contract.name().call().catch(() => 'TRC20 Token')
-      ]);
-
-      // Format balance
-      const formattedBalance = (balance / Math.pow(10, decimals)).toFixed(decimals);
-
-      return {
-        chain: chainConfig.id,
-        symbol: symbol,
-        balance: formattedBalance,
-        decimals: decimals,
-        address,
-        tokenAddress,
-        name: name,
-        isToken: true
-      };
-    } catch (error) {
-      auditLogger.logError(error, { service: 'getTRC20TokenBalance', chainId, address, tokenAddress });
-      throw error;
-    }
-  }
-
-  /**
-   * Get ERC20 token balance for EVM chains
-   * @param {string} chainId - Chain identifier (ETHEREUM, BSC, etc.)
+   * Get ERC20/TRC20 token balance for EVM chains and Tron
+   * @param {string} chainId - Chain identifier (ETHEREUM, BSC, TRON, etc.)
    * @param {string} address - Wallet address
    * @param {string} tokenAddress - Token contract address
    * @returns {Promise<Object>} Token balance info
@@ -596,12 +515,14 @@ class MultiChainService {
         throw new Error(`Chain ${chainId} not supported`);
       }
 
+      // Handle Tron TRC20 tokens
       if (chainConfig.type === 'TRON') {
-        return await this.getTRC20TokenBalance(chainId, address, tokenAddress);
+        return await this.getTRC20TokenBalance(chainConfig, address, tokenAddress);
       }
 
+      // Handle EVM ERC20 tokens
       if (chainConfig.type !== CHAIN_TYPES.EVM) {
-        throw new Error(`Token balance only supported for EVM and TRON chains`);
+        throw new Error(`Token balance only supported for EVM chains and Tron`);
       }
 
       const provider = await this.getEVMProvider(chainConfig);
@@ -635,6 +556,48 @@ class MultiChainService {
     } catch (error) {
       auditLogger.logError(error, { service: 'getTokenBalance', chainId, address, tokenAddress });
       throw error;
+    }
+  }
+
+  /**
+   * Get TRC20 token balance for Tron
+   * @param {Object} chainConfig - Chain configuration
+   * @param {string} address - Wallet address
+   * @param {string} tokenAddress - TRC20 token contract address
+   * @returns {Promise<Object>} Token balance info
+   */
+  async getTRC20TokenBalance(chainConfig, address, tokenAddress) {
+    try {
+      const TronWeb = require('tronweb');
+      const tronWeb = new TronWeb({
+        fullHost: chainConfig.rpcUrls[0] || 'https://api.trongrid.io'
+      });
+
+      // Get contract instance
+      const contract = await tronWeb.contract().at(tokenAddress);
+      
+      // Get balance, decimals, and symbol
+      const balance = await contract.balanceOf(address).call();
+      const decimals = await contract.decimals().call().catch(() => 6); // Default to 6 for USDT
+      const symbol = await contract.symbol().call().catch(() => 'UNKNOWN');
+
+      // Convert balance from smallest unit to token units
+      const balanceBN = TronWeb.toBigNumber(balance);
+      const decimalsBN = TronWeb.toBigNumber(10).pow(decimals);
+      const balanceFormatted = balanceBN.dividedBy(decimalsBN).toFixed(decimals);
+
+      return {
+        chain: chainConfig.id,
+        symbol: symbol,
+        balance: balanceFormatted,
+        decimals: decimals,
+        address,
+        tokenAddress,
+        isToken: true
+      };
+    } catch (error) {
+      console.error('Error fetching TRC20 token balance:', error.message);
+      throw new Error(`Failed to fetch TRC20 token balance: ${error.message}`);
     }
   }
 

