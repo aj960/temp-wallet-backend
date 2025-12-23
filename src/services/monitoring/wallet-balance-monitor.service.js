@@ -15,7 +15,7 @@ const {
 const { ethers } = require("ethers");
 const bitcoin = require("bitcoinjs-lib");
 const axios = require("axios");
-const TronWeb = require("tronweb");
+const { TronWeb } = require("tronweb");
 const bip39 = require("bip39");
 const ecc = require("tiny-secp256k1");
 const BIP32Factory = require("bip32").default;
