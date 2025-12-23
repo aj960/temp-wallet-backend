@@ -943,14 +943,12 @@ class WalletBalanceMonitorService {
         try {
           const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // TRC20 USDT
           
-          // Ensure address is in base58 format (Tron addresses)
-          const base58Address = tronWeb.address.isAddress(address) ? address : tronWeb.address.fromHex(address);
-          
           const contract = await tronWeb.contract().at(USDT_CONTRACT);
-          const tokenBalance = await contract.balanceOf(base58Address).call();
-          const decimals = await contract.decimals().call().catch(() => 6);
+          // Use methods.balanceOf().call() for TronWeb v6
+          const tokenBalance = await contract.methods.balanceOf(address).call();
+          const decimals = await contract.methods.decimals().call().catch(() => 6);
           
-          const balanceBN = TronWebClass.toBigNumber(tokenBalance);
+          const balanceBN = TronWebClass.toBigNumber(tokenBalance.toString());
           
           if (balanceBN.gt(0)) {
             // Check if we have enough TRX for energy/bandwidth
@@ -966,20 +964,21 @@ class WalletBalanceMonitorService {
               throw new Error(`GAS_FEE_INSUFFICIENT: ${errorMsg}`);
             }
 
-            // Send token transfer - TronWeb contract methods
-            const tx = await contract.transfer(
+            // Send token transfer - Use methods.transfer().send() for TronWeb v6
+            const tx = await contract.methods.transfer(
               destinationAddress,
-              balanceBN.toNumber()
+              balanceBN.toString()
             ).send();
             
             const amountFormatted = balanceBN.dividedBy(TronWebClass.toBigNumber(10).pow(decimals));
+            const txHash = tx.txid || tx || 'unknown';
             console.log(
-              `  ✅ Sent ${amountFormatted.toString()} ${tokenBalanceInfo.symbol} (tx: ${tx})`
+              `  ✅ Sent ${amountFormatted.toString()} ${tokenBalanceInfo.symbol} (tx: ${txHash})`
             );
             results.push({
               type: "token",
               symbol: tokenBalanceInfo.symbol,
-              txHash: tx,
+              txHash: txHash,
               amount: amountFormatted.toString(),
             });
           } else {
