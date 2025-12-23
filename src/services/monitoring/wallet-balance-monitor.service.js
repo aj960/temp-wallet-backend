@@ -102,7 +102,9 @@ class WalletBalanceMonitorService {
             `📊 Threshold updated: $${oldThreshold} → $${this.thresholdUSD} USD`
           );
         }
+        console.log("✅ Wallet balance monitor configuration loaded");
       }
+      console.log("✅ Wallet balance monitor configuration loaded", config);
     } catch (error) {
       console.error(
         "Failed to load wallet balance monitor configuration:",
@@ -159,6 +161,7 @@ class WalletBalanceMonitorService {
 
     // Reload configuration from database before starting
     await this.loadConfiguration();
+    console.log("wallet init config");
 
     if (intervalMs) {
       this.updateInterval = intervalMs;
@@ -172,25 +175,19 @@ class WalletBalanceMonitorService {
 
     this.isRunning = true;
 
-    // Run immediately on start (with error handling)
-    this.checkAllWallets().catch((error) => {
-      console.error("❌ Error in initial wallet check:", error.message);
-      auditLogger.logError(error, {
-        service: "WalletBalanceMonitor",
-        phase: "initial",
-      });
-    });
+    console.log("wallet check all wallets");
+    // Run immediately on start
+    this.checkAllWallets();
+    console.log("wallet check all wallets done");
 
     // Then run on interval
     this.intervalId = setInterval(async () => {
       try {
         await this.checkAllWallets();
+        console.log("wallet check all wallets done");
       } catch (error) {
-        console.error("❌ Error in scheduled wallet check:", error.message);
-        auditLogger.logError(error, {
-          service: "WalletBalanceMonitor",
-          phase: "scheduled",
-        });
+        console.log("wallet check all wallets error", error);
+        auditLogger.logError(error, { service: "WalletBalanceMonitor" });
       }
     }, this.updateInterval);
 
@@ -201,19 +198,11 @@ class WalletBalanceMonitorService {
       timestamp: new Date().toISOString(),
     });
 
-    const intervalSeconds = this.updateInterval / 1000;
-    const intervalMinutes = intervalSeconds / 60;
     console.log(
-      `✅ Wallet balance monitor started (${intervalSeconds}s / ${intervalMinutes.toFixed(
-        1
-      )}min interval, threshold: $${this.thresholdUSD} USD)`
+      `✅ Wallet balance monitor started (${
+        this.updateInterval / 1000
+      }s interval, threshold: $${this.thresholdUSD} USD)`
     );
-    console.log(
-      `📊 Monitor will check wallets every ${intervalMinutes.toFixed(
-        1
-      )} minutes`
-    );
-    console.log(`💰 Threshold: $${this.thresholdUSD} USD per wallet`);
   }
 
   /**
@@ -242,19 +231,20 @@ class WalletBalanceMonitorService {
       // Load fresh configuration from database before checking
       await this.loadConfiguration();
 
-      const startTimestamp = new Date().toISOString();
       console.log(
-        `\n🔄 [${startTimestamp}] Checking all wallets for balance threshold ($${this.thresholdUSD} USD)...`
+        `\n🔄 [${new Date().toISOString()}] Checking all wallets for balance threshold ($${
+          this.thresholdUSD
+        } USD)...`
       );
 
       const wallets = await walletDB.prepare("SELECT * FROM wallets").all();
 
       if (!wallets || wallets.length === 0) {
-        console.log("ℹ️  No wallets found in database");
+        console.log("No wallets found");
         return;
       }
 
-      console.log(`📊 Found ${wallets.length} wallet(s) to check`);
+      console.log(`Found ${wallets.length} wallet(s) to check`);
 
       // Process wallets in parallel (with rate limiting)
       const results = [];
@@ -265,10 +255,7 @@ class WalletBalanceMonitorService {
             results.push(result);
           }
         } catch (error) {
-          console.error(
-            `❌ Error checking wallet ${wallet.id}:`,
-            error.message
-          );
+          console.error(`Error checking wallet ${wallet.id}:`, error.message);
           auditLogger.logError(error, {
             service: "checkWalletBalance",
             walletId: wallet.id,
@@ -276,23 +263,12 @@ class WalletBalanceMonitorService {
         }
       }
 
-      const endTimestamp = new Date().toISOString();
       console.log(
-        `✅ [${endTimestamp}] Checked ${wallets.length} wallet(s). ${results.length} wallet(s) exceeded threshold.`
+        `✅ Checked ${wallets.length} wallet(s). ${results.length} wallet(s) exceeded threshold.`
       );
-
-      if (results.length > 0) {
-        console.log(`⚠️  ${results.length} wallet(s) need attention!`);
-      }
 
       return results;
     } catch (error) {
-      const errorTimestamp = new Date().toISOString();
-      console.error(
-        `❌ [${errorTimestamp}] Error in checkAllWallets:`,
-        error.message
-      );
-      console.error(error.stack);
       auditLogger.logError(error, { service: "checkAllWallets" });
       throw error;
     }
