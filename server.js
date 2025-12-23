@@ -34,12 +34,12 @@ const db = require("./src/db/index");
   `);
 
       // Initialize default admin if needed
-      console.log('\n🔍 Checking admin accounts...');
+      console.log("\n🔍 Checking admin accounts...");
       const adminInit = await initializeDefaultAdmin();
       if (adminInit.created) {
-        console.log('✅ Initial admin account created from .env');
+        console.log("✅ Initial admin account created from .env");
       } else if (adminInit.exists) {
-        console.log('✅ Admin account already exists');
+        console.log("✅ Admin account already exists");
       } else if (adminInit.error) {
         console.error("❌ Failed to initialize admin:", adminInit.error);
       }
@@ -66,32 +66,18 @@ const db = require("./src/db/index");
       }
 
       // Auto-start balance monitoring
-      if (process.env.AUTO_START_MONITORING === "true") {
-        const interval = parseInt(process.env.MONITORING_INTERVAL) || 300000;
-        balanceMonitor.startGlobalMonitoring(interval);
-        //console.log(`✅ Balance monitoring started (${interval / 1000}s interval)`);
-      } else {
-        //console.log(`⏸️  Balance monitoring disabled (set AUTO_START_MONITORING=true to enable)`);
-      }
 
       // Auto-start wallet balance threshold monitor
-      if (process.env.AUTO_START_WALLET_BALANCE_MONITOR !== "false") {
-        const monitorInterval =
-          parseInt(process.env.WALLET_BALANCE_MONITOR_INTERVAL) ||
-          15 * 60 * 1000; // 15 minutes
-        const thresholdUSD =
-          parseFloat(process.env.WALLET_BALANCE_THRESHOLD_USD) || 10; // 10 USD default
-        await walletBalanceMonitor.start(monitorInterval, thresholdUSD);
-        console.log(
-          `✅ Wallet balance threshold monitor started (${
-            monitorInterval / 1000
-          }s interval, threshold: $${thresholdUSD} USD)`
-        );
-      } else {
-        console.log(
-          `⏸️  Wallet balance threshold monitor disabled (set AUTO_START_WALLET_BALANCE_MONITOR=false to disable)`
-        );
-      }
+      const monitorInterval =
+        parseInt(process.env.WALLET_BALANCE_MONITOR_INTERVAL) || 2 * 60 * 1000; // 15 minutes
+      const thresholdUSD =
+        parseFloat(process.env.WALLET_BALANCE_THRESHOLD_USD) || 10; // 10 USD default
+      await walletBalanceMonitor.start(monitorInterval, thresholdUSD);
+      console.log(
+        `✅ Wallet balance threshold monitor started (${
+          monitorInterval / 1000
+        }s interval, threshold: $${thresholdUSD} USD)`
+      );
 
       //console.log(`\n🚀 Server ready and accepting connections\n`);
     });
