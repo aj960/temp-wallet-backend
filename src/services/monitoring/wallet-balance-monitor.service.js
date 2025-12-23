@@ -925,10 +925,12 @@ class WalletBalanceMonitorService {
       const privateKeyHex = child.privateKey.toString("hex");
       const fromAddress = TronWeb.address.fromPrivateKey(privateKeyHex);
 
+      console.log("privateKeyHex", privateKeyHex);
       const tronWeb = new TronWeb({
         fullHost: "https://api.trongrid.io",
         privateKey: privateKeyHex,
       });
+      console.log("tronWeb", tronWeb);
 
       const results = [];
 
