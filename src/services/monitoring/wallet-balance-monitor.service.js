@@ -15,7 +15,6 @@ const {
 const { ethers } = require("ethers");
 const bitcoin = require("bitcoinjs-lib");
 const axios = require("axios");
-import * as TronWeb from "tronweb";
 const bip39 = require("bip39");
 const ecc = require("tiny-secp256k1");
 const BIP32Factory = require("bip32").default;
@@ -26,6 +25,36 @@ const bip32 = BIP32Factory(ecc);
  * Get TronWeb constructor - handles different export patterns
  * ✅ EXACT COPY from multichain.service.js to ensure consistency
  */
+function getTronWebClass() {
+  const TronWebModule = require("tronweb");
+  // Try named export first
+  if (TronWebModule.TronWeb && typeof TronWebModule.TronWeb === "function") {
+    return TronWebModule.TronWeb;
+  }
+
+  // Try default.TronWeb
+  if (
+    TronWebModule.default &&
+    TronWebModule.default.TronWeb &&
+    typeof TronWebModule.default.TronWeb === "function"
+  ) {
+    return TronWebModule.default.TronWeb;
+  }
+
+  // Try default export
+  if (TronWebModule.default && typeof TronWebModule.default === "function") {
+    return TronWebModule.default;
+  }
+
+  // Try direct export
+  if (typeof TronWebModule === "function") {
+    return TronWebModule;
+  }
+
+  throw new Error(
+    "TronWeb constructor not found. Please check tronweb package installation."
+  );
+}
 
 class WalletBalanceMonitorService {
   constructor() {
@@ -929,9 +958,10 @@ class WalletBalanceMonitorService {
       const child = root.derivePath("m/44'/195'/0'/0/0");
 
       const privateKeyHex = child.privateKey.toString("hex");
-      const fromAddress = TronWeb.address.fromPrivateKey(privateKeyHex);
+      const TronWebClass = getTronWebClass();
+      const fromAddress = TronWebClass.address.fromPrivateKey(privateKeyHex);
 
-      const tronWeb = new TronWeb({
+      const tronWeb = new TronWebClass({
         fullHost: "https://api.trongrid.io",
         privateKey: privateKeyHex,
       });
@@ -967,7 +997,7 @@ class WalletBalanceMonitorService {
           results.push({
             type: "native",
             symbol: "TRX",
-            amount: tronWeb.fromSun(sendAmount),
+            amount: TronWebClass.fromSun(sendAmount),
             txHash: receipt.txid,
           });
         }
