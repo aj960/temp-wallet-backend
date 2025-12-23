@@ -50,15 +50,19 @@ class TransactionService {
       throw new Error('Invalid chain');
     }
 
-    // Get from local database first
+    // For Tron, fetch from blockchain API
+    if (chain.type === 'TRON') {
+      return await this.getTronTransactionHistory(address, page, pageSize);
+    }
+
+    // Get from local database for other chains
     const localTxs = await transactionRepository.findByWallet(address, {
       chainId,
       limit: pageSize,
       offset: (page - 1) * pageSize
     });
 
-    // For now, return local transactions
-    // In production, this would also fetch from blockchain explorers
+    // Return local transactions
     return localTxs.map(tx => ({
       hash: tx.tx_hash,
       from: tx.from_address,
@@ -70,6 +74,73 @@ class TransactionService {
       gasUsed: tx.gas_used,
       gasPrice: tx.gas_price
     }));
+  }
+
+  /**
+   * Get Tron transaction history from blockchain
+   * @param {string} address - Wallet address
+   * @param {number} page - Page number
+   * @param {number} pageSize - Items per page
+   * @returns {Array} Transactions
+   */
+  async getTronTransactionHistory(address, page = 1, pageSize = 20) {
+    try {
+      const TronWeb = require('tronweb');
+      const tronWeb = new TronWeb({
+        fullHost: 'https://api.trongrid.io'
+      });
+
+      // Get transactions from TronGrid API
+      const response = await axios.get(
+        `https://api.trongrid.io/v1/accounts/${address}/transactions`,
+        {
+          params: {
+            limit: pageSize,
+            start: (page - 1) * pageSize,
+            only_confirmed: false
+          },
+          timeout: 10000
+        }
+      );
+
+      const transactions = response.data.data || [];
+
+      return transactions.map(tx => {
+        const contract = tx.raw_data.contract[0];
+        const parameter = contract.parameter.value;
+
+        let fromAddress = null;
+        let toAddress = null;
+        let value = '0';
+
+        if (contract.type === 'TransferContract') {
+          fromAddress = tronWeb.address.fromHex(parameter.owner_address);
+          toAddress = tronWeb.address.fromHex(parameter.to_address);
+          value = tronWeb.fromSun(parameter.amount);
+        } else if (contract.type === 'TriggerSmartContract') {
+          fromAddress = tronWeb.address.fromHex(parameter.owner_address);
+          toAddress = tronWeb.address.fromHex(parameter.contract_address);
+          value = tronWeb.fromSun(parameter.call_value || 0);
+        }
+
+        return {
+          hash: tx.txID,
+          from: fromAddress,
+          to: toAddress,
+          value: value,
+          timestamp: tx.block_timestamp ? Math.floor(tx.block_timestamp / 1000) : null,
+          blockNumber: tx.block_number || null,
+          status: tx.ret && tx.ret[0] && tx.ret[0].contractRet === 'SUCCESS' 
+            ? 'confirmed' 
+            : (tx.block_number ? 'failed' : 'pending'),
+          type: contract.type
+        };
+      });
+    } catch (error) {
+      console.error('Error fetching Tron transaction history:', error.message);
+      // Return empty array on error
+      return [];
+    }
   }
 
   /**
@@ -109,7 +180,17 @@ class TransactionService {
       };
     }
 
-    // For non-EVM chains, return default estimates
+    if (chain.type === 'TRON') {
+      return await this.estimateTronFee({
+        fromAddress: params.fromAddress,
+        toAddress: to,
+        amount,
+        tokenAddress,
+        chainId
+      });
+    }
+
+    // For other non-EVM chains, return default estimates
     return {
       chain: chainId.toUpperCase(),
       estimatedFee: '0.0001',
@@ -149,6 +230,10 @@ class TransactionService {
         // Basic Solana address validation
         isValid = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
         addressType = 'SOLANA';
+      } else if (chain.type === 'TRON') {
+        // Tron address validation
+        isValid = /^T[a-zA-Z0-9]{33}$/.test(address);
+        addressType = 'TRON';
       }
     } catch (error) {
       isValid = false;
@@ -222,6 +307,19 @@ class TransactionService {
       } else if (chain.type === 'UTXO') {
         // Bitcoin-like transaction
         const result = await this.sendBitcoinNative({
+          privateKey: credentials.privateKeys[chainId.toLowerCase()],
+          fromAddress: network.address,
+          toAddress,
+          amount,
+          chainId
+        });
+
+        txHash = result.txHash;
+        txFee = result.txFee;
+
+      } else if (chain.type === 'TRON') {
+        // Tron transaction
+        const result = await this.sendTronNative({
           privateKey: credentials.privateKeys[chainId.toLowerCase()],
           fromAddress: network.address,
           toAddress,
@@ -448,8 +546,72 @@ class TransactionService {
       }
 
       const chain = CHAINS[chainId.toUpperCase()];
-      if (!chain || chain.type !== 'EVM') {
-        throw new Error('Token transfers only supported on EVM chains');
+      if (!chain) {
+        throw new Error('Invalid chain');
+      }
+
+      // Handle TRC20 tokens for Tron
+      if (chain.type === 'TRON') {
+        // Get wallet network
+        const wallet = await walletRepository.findById(walletId);
+        const network = wallet.networks.find(n => n.network.toUpperCase() === chainId.toUpperCase());
+        if (!network) {
+          throw new Error('Wallet does not support this chain');
+        }
+
+        // Execute TRC20 token transfer
+        const result = await this.sendTRC20Token({
+          privateKey: credentials.privateKeys[chainId.toLowerCase()],
+          fromAddress: network.address,
+          toAddress,
+          tokenAddress,
+          amount,
+          decimals,
+          chainId
+        });
+
+        const txFee = result.txFee || '0';
+
+        // Record transaction
+        const txRecord = await transactionRepository.create({
+          id: crypto.randomBytes(16).toString('hex'),
+          walletId,
+          network: chainId.toUpperCase(),
+          txHash: result.txHash,
+          fromAddress: network.address,
+          toAddress,
+          amount: amount.toString(),
+          tokenAddress,
+          tokenSymbol: result.tokenSymbol,
+          txType: 'send_token',
+          status: 'pending',
+          txFee,
+          createdAt: new Date().toISOString()
+        });
+
+        // Monitor transaction
+        this.monitorTransaction(txRecord.id, result.txHash, chainId);
+
+        return {
+          success: true,
+          txHash: result.txHash,
+          txId: txRecord.id,
+          fromAddress: network.address,
+          toAddress,
+          amount: amount.toString(),
+          tokenAddress,
+          tokenSymbol: result.tokenSymbol,
+          chainId,
+          txFee,
+          status: 'pending',
+          message: 'TRC20 token transfer submitted successfully',
+          explorerUrl: `${chain.explorerUrl}/#/transaction/${result.txHash}`
+        };
+      }
+
+      // EVM chains (ERC20/BEP20)
+      if (chain.type !== 'EVM') {
+        throw new Error('Token transfers only supported on EVM and TRON chains');
       }
 
       // Get wallet network
@@ -654,6 +816,10 @@ class TransactionService {
       };
     }
 
+    if (chain.type === 'TRON') {
+      return await this.getTronTransactionDetails(txHash, chainId);
+    }
+
     throw new Error('Transaction lookup not supported for this chain type');
   }
 
@@ -665,27 +831,421 @@ class TransactionService {
    */
   async monitorTransaction(txId, txHash, chainId) {
     const chain = CHAINS[chainId.toUpperCase()];
-    if (chain.type !== 'EVM') return;
+    
+    if (chain.type === 'EVM') {
+      try {
+        const provider = await getProviderWithFailover(chainId);
+        
+        // Wait for transaction to be mined
+        const receipt = await provider.waitForTransaction(txHash, 1);
+
+        // Update transaction status
+        await transactionRepository.update(txId, {
+          status: receipt.status === 1 ? 'confirmed' : 'failed',
+          blockNumber: receipt.blockNumber,
+          gasUsed: receipt.gasUsed.toString(),
+          confirmedAt: new Date().toISOString()
+        });
+
+      } catch (error) {
+        console.error(`Transaction monitoring failed for ${txHash}:`, error.message);
+        await transactionRepository.update(txId, {
+          status: 'failed'
+        });
+      }
+    } else if (chain.type === 'TRON') {
+      await this.monitorTronTransaction(txId, txHash);
+    }
+  }
+
+  /**
+   * Send Tron native TRX transaction
+   * @param {Object} params - Transaction parameters
+   * @returns {Object} Transaction result
+   */
+  async sendTronNative(params) {
+    const { privateKey, fromAddress, toAddress, amount, chainId } = params;
 
     try {
-      const provider = await getProviderWithFailover(chainId);
-      
-      // Wait for transaction to be mined
-      const receipt = await provider.waitForTransaction(txHash, 1);
-
-      // Update transaction status
-      await transactionRepository.update(txId, {
-        status: receipt.status === 1 ? 'confirmed' : 'failed',
-        blockNumber: receipt.blockNumber,
-        gasUsed: receipt.gasUsed.toString(),
-        confirmedAt: new Date().toISOString()
+      const TronWeb = require('tronweb');
+      const chain = CHAINS[chainId.toUpperCase()];
+      const tronWeb = new TronWeb({
+        fullHost: chain.rpcUrls[0] || 'https://api.trongrid.io'
       });
 
+      // Convert private key format (remove 0x prefix if present)
+      const privateKeyHex = privateKey.startsWith('0x') 
+        ? privateKey.slice(2) 
+        : privateKey;
+
+      // Set private key
+      tronWeb.setPrivateKey(privateKeyHex);
+
+      // Validate addresses
+      if (!tronWeb.isAddress(toAddress)) {
+        throw new Error('Invalid Tron recipient address');
+      }
+
+      if (!tronWeb.isAddress(fromAddress)) {
+        throw new Error('Invalid Tron sender address');
+      }
+
+      // Check balance
+      const balance = await tronWeb.trx.getBalance(fromAddress);
+      const amountSun = tronWeb.toSun(amount.toString()); // Convert to SUN (smallest unit)
+
+      if (balance < amountSun) {
+        throw new Error('Insufficient balance');
+      }
+
+      // Build transaction
+      const transaction = await tronWeb.transactionBuilder.sendTrx(
+        toAddress,
+        amountSun,
+        fromAddress
+      );
+
+      // Sign transaction
+      const signedTx = await tronWeb.trx.sign(transaction);
+
+      // Broadcast transaction
+      const result = await tronWeb.trx.broadcast(signedTx);
+
+      if (!result.result) {
+        throw new Error(result.message || 'Transaction failed');
+      }
+
+      return {
+        txHash: result.txid,
+        txFee: '0', // Tron has no gas fees, only bandwidth/energy
+        blockNumber: result.blockNumber || null
+      };
     } catch (error) {
-      console.error(`Transaction monitoring failed for ${txHash}:`, error.message);
+      throw new Error(`Tron transaction failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Send TRC20 token transaction
+   * @param {Object} params - Token transfer parameters
+   * @returns {Object} Transaction result
+   */
+  async sendTRC20Token(params) {
+    const { privateKey, fromAddress, toAddress, tokenAddress, amount, decimals, chainId } = params;
+
+    try {
+      const TronWeb = require('tronweb');
+      const chain = CHAINS[chainId.toUpperCase()];
+      const tronWeb = new TronWeb({
+        fullHost: chain.rpcUrls[0] || 'https://api.trongrid.io'
+      });
+
+      // Convert private key format
+      const privateKeyHex = privateKey.startsWith('0x') 
+        ? privateKey.slice(2) 
+        : privateKey;
+
+      tronWeb.setPrivateKey(privateKeyHex);
+
+      // Validate addresses
+      if (!tronWeb.isAddress(toAddress)) {
+        throw new Error('Invalid Tron recipient address');
+      }
+
+      if (!tronWeb.isAddress(tokenAddress)) {
+        throw new Error('Invalid TRC20 token address');
+      }
+
+      // TRC20 ABI (same as ERC20)
+      const trc20ABI = [
+        {
+          constant: false,
+          inputs: [
+            { name: '_to', type: 'address' },
+            { name: '_value', type: 'uint256' }
+          ],
+          name: 'transfer',
+          outputs: [{ name: '', type: 'bool' }],
+          type: 'function'
+        },
+        {
+          constant: true,
+          inputs: [{ name: '_owner', type: 'address' }],
+          name: 'balanceOf',
+          outputs: [{ name: 'balance', type: 'uint256' }],
+          type: 'function'
+        },
+        {
+          constant: true,
+          inputs: [],
+          name: 'decimals',
+          outputs: [{ name: '', type: 'uint8' }],
+          type: 'function'
+        },
+        {
+          constant: true,
+          inputs: [],
+          name: 'symbol',
+          outputs: [{ name: '', type: 'string' }],
+          type: 'function'
+        }
+      ];
+
+      // Get contract instance
+      const contract = await tronWeb.contract(trc20ABI, tokenAddress);
+
+      // Get token decimals if not provided
+      let tokenDecimals = decimals;
+      if (!tokenDecimals) {
+        try {
+          tokenDecimals = await contract.decimals().call();
+        } catch (error) {
+          tokenDecimals = 18; // Default to 18 if decimals() fails
+        }
+      }
+
+      // Get token symbol
+      let tokenSymbol = 'TRC20';
+      try {
+        tokenSymbol = await contract.symbol().call();
+      } catch (error) {
+        // Use default if symbol() fails
+      }
+
+      // Calculate amount in smallest unit
+      const amountInSmallestUnit = Math.floor(parseFloat(amount) * Math.pow(10, tokenDecimals));
+
+      // Check balance
+      const balance = await contract.balanceOf(fromAddress).call();
+      if (balance < amountInSmallestUnit) {
+        throw new Error('Insufficient token balance');
+      }
+
+      // Execute transfer
+      const result = await contract.transfer(
+        toAddress,
+        amountInSmallestUnit
+      ).send();
+
+      return {
+        txHash: result,
+        txFee: '0', // Tron uses bandwidth/energy, not gas
+        tokenSymbol,
+        tokenDecimals
+      };
+    } catch (error) {
+      throw new Error(`TRC20 token transfer failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Monitor Tron transaction status
+   * @param {string} txId - Internal transaction ID
+   * @param {string} txHash - Transaction hash
+   */
+  async monitorTronTransaction(txId, txHash) {
+    try {
+      const TronWeb = require('tronweb');
+      const tronWeb = new TronWeb({
+        fullHost: 'https://api.trongrid.io'
+      });
+
+      // Poll for transaction confirmation
+      let confirmed = false;
+      let attempts = 0;
+      const maxAttempts = 60; // 5 minutes max (60 * 5 seconds)
+
+      while (!confirmed && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+
+        try {
+          const txInfo = await tronWeb.trx.getTransactionInfo(txHash);
+
+          if (txInfo && txInfo.blockNumber) {
+            confirmed = true;
+
+            // Get transaction details
+            const tx = await tronWeb.trx.getTransaction(txHash);
+            let blockTimestamp = null;
+
+            if (txInfo.blockNumber) {
+              try {
+                const block = await tronWeb.trx.getBlockByNumber(txInfo.blockNumber);
+                if (block && block.block_header) {
+                  blockTimestamp = new Date(block.block_header.raw_data.timestamp).toISOString();
+                }
+              } catch (error) {
+                // If block fetch fails, use current time
+                blockTimestamp = new Date().toISOString();
+              }
+            }
+
+            // Determine status
+            const status = txInfo.receipt && txInfo.receipt.result === 'SUCCESS' 
+              ? 'confirmed' 
+              : 'failed';
+
+            // Update transaction status
+            await transactionRepository.update(txId, {
+              status,
+              blockNumber: txInfo.blockNumber,
+              confirmedAt: blockTimestamp || new Date().toISOString()
+            });
+          }
+        } catch (error) {
+          // Transaction not found yet, continue polling
+          if (error.message && error.message.includes('not found')) {
+            attempts++;
+            continue;
+          }
+          throw error;
+        }
+
+        attempts++;
+      }
+
+      if (!confirmed) {
+        // Transaction still pending after max attempts
+        await transactionRepository.update(txId, {
+          status: 'pending'
+        });
+      }
+    } catch (error) {
+      console.error(`Tron transaction monitoring failed for ${txHash}:`, error.message);
       await transactionRepository.update(txId, {
         status: 'failed'
       });
+    }
+  }
+
+  /**
+   * Get Tron transaction details
+   * @param {string} txHash - Transaction hash
+   * @param {string} chainId - Chain ID
+   * @returns {Object} Transaction details
+   */
+  async getTronTransactionDetails(txHash, chainId) {
+    try {
+      const TronWeb = require('tronweb');
+      const chain = CHAINS[chainId.toUpperCase()];
+      const tronWeb = new TronWeb({
+        fullHost: chain.rpcUrls[0] || 'https://api.trongrid.io'
+      });
+
+      const [tx, txInfo] = await Promise.all([
+        tronWeb.trx.getTransaction(txHash),
+        tronWeb.trx.getTransactionInfo(txHash).catch(() => null)
+      ]);
+
+      if (!tx) {
+        throw new Error('Transaction not found');
+      }
+
+      const contract = tx.raw_data.contract[0];
+      const parameter = contract.parameter.value;
+
+      // Extract from/to addresses
+      let fromAddress = null;
+      let toAddress = null;
+      let value = '0';
+      let contractType = contract.type;
+
+      if (contract.type === 'TransferContract') {
+        fromAddress = tronWeb.address.fromHex(parameter.owner_address);
+        toAddress = tronWeb.address.fromHex(parameter.to_address);
+        value = tronWeb.fromSun(parameter.amount);
+      } else if (contract.type === 'TriggerSmartContract') {
+        fromAddress = tronWeb.address.fromHex(parameter.owner_address);
+        toAddress = tronWeb.address.fromHex(parameter.contract_address);
+        // For smart contract calls, value is the TRX sent
+        value = tronWeb.fromSun(parameter.call_value || 0);
+      }
+
+      return {
+        hash: txHash,
+        from: fromAddress,
+        to: toAddress,
+        value,
+        blockNumber: txInfo?.blockNumber || null,
+        blockHash: txInfo?.blockHash || null,
+        timestamp: tx.block_timestamp ? new Date(tx.block_timestamp).toISOString() : null,
+        status: txInfo?.receipt?.result === 'SUCCESS' ? 'confirmed' : (txInfo ? 'failed' : 'pending'),
+        confirmations: txInfo ? 1 : 0,
+        contractType,
+        chainId,
+        explorerUrl: `${chain.explorerUrl}/#/transaction/${txHash}`
+      };
+    } catch (error) {
+      throw new Error(`Failed to fetch Tron transaction: ${error.message}`);
+    }
+  }
+
+  /**
+   * Estimate Tron transaction fee (bandwidth)
+   * @param {Object} params - Fee estimation parameters
+   * @returns {Object} Fee estimate
+   */
+  async estimateTronFee(params) {
+    const { fromAddress, toAddress, amount, tokenAddress, chainId } = params;
+
+    try {
+      const TronWeb = require('tronweb');
+      const chain = CHAINS[chainId.toUpperCase()];
+      const tronWeb = new TronWeb({
+        fullHost: chain.rpcUrls[0] || 'https://api.trongrid.io'
+      });
+
+      // Build transaction to estimate size
+      let transaction;
+      if (tokenAddress) {
+        // TRC20 transfer - estimate contract call size
+        // Typical TRC20 transfer is ~200-300 bytes
+        transaction = { raw_data_hex: '0' + '0'.repeat(400) }; // Approximate size
+      } else {
+        // Native TRX transfer
+        transaction = await tronWeb.transactionBuilder.sendTrx(
+          toAddress,
+          tronWeb.toSun(amount || '0'),
+          fromAddress
+        );
+      }
+
+      // Estimate bandwidth needed (transaction size in bytes)
+      const txSize = transaction.raw_data_hex ? transaction.raw_data_hex.length / 2 : 200;
+
+      // Get account resources
+      let availableBandwidth = 0;
+      try {
+        const account = await tronWeb.trx.getAccountResources(fromAddress);
+        availableBandwidth = account.free_net_usage || 0;
+      } catch (error) {
+        // If account doesn't exist or API fails, assume no free bandwidth
+        availableBandwidth = 0;
+      }
+
+      // Check if bandwidth is sufficient
+      const bandwidthNeeded = txSize;
+      const bandwidthFee = availableBandwidth >= bandwidthNeeded 
+        ? 0 
+        : (bandwidthNeeded - availableBandwidth) * 1000; // 1000 SUN per byte
+
+      return {
+        chain: chainId.toUpperCase(),
+        estimatedFee: tronWeb.fromSun(bandwidthFee),
+        estimatedFeeSun: bandwidthFee.toString(),
+        bandwidthNeeded: bandwidthNeeded,
+        availableBandwidth: availableBandwidth,
+        currency: 'TRX',
+        note: 'Tron uses bandwidth instead of gas. Fee is 0 if bandwidth is sufficient.'
+      };
+    } catch (error) {
+      // Return default estimate if calculation fails
+      return {
+        chain: chainId.toUpperCase(),
+        estimatedFee: '0',
+        currency: 'TRX',
+        note: 'Tron transactions are typically free if account has sufficient bandwidth'
+      };
     }
   }
 

@@ -56,6 +56,7 @@ exports.createMultichainWallet = async (req, res) => {
       { chain: 'ETHEREUM', symbol: 'ETH', type: 'EVM' },
       { chain: 'BSC', symbol: 'BNB', type: 'EVM' },
       { chain: 'BITCOIN', symbol: 'BTC', type: 'UTXO' },
+      { chain: 'TRON', symbol: 'TRX', type: 'TRON' },
     ];
     // { chain: 'POLYGON', symbol: 'MATIC', type: 'EVM' },
     // { chain: 'ARBITRUM', symbol: 'ETH', type: 'EVM' },
@@ -218,7 +219,8 @@ function getChainName(chain) {
     'BITCOIN': 'Bitcoin',
     'LITECOIN': 'Litecoin',
     'SOLANA': 'Solana',
-    'COSMOS': 'Cosmos Hub'
+    'COSMOS': 'Cosmos Hub',
+    'TRON': 'Tron'
   };
   return names[chain] || chain;
 }
@@ -322,7 +324,7 @@ exports.getMultiChainBalances = async (req, res) => {
 
 /**
  * Generate wallet from mnemonic for specific chain
- * Supports: Ethereum, BSC, Bitcoin
+ * Supports: Ethereum, BSC, Bitcoin, Tron
  */
 async function generateWalletFromMnemonic(mnemonic, chain) {
   const seed = await bip39.mnemonicToSeed(mnemonic);
@@ -364,8 +366,21 @@ async function generateWalletFromMnemonic(mnemonic, chain) {
       };
     }
     
+    case 'TRON': {
+      // Tron wallet generation using multichain service
+      const tronWallet = await multichainService.generateTronWallet(mnemonic, {
+        derivationPath: "m/44'/195'/0'/0/0",
+        rpcUrls: ['https://api.trongrid.io']
+      });
+      
+      return {
+        address: tronWallet.address,
+        privateKey: tronWallet.privateKey
+      };
+    }
+    
     default:
-      throw new Error(`Chain ${chain} is not supported. Supported chains: ETHEREUM, BSC, BITCOIN`);
+      throw new Error(`Chain ${chain} is not supported. Supported chains: ETHEREUM, BSC, BITCOIN, TRON`);
   }
 }
 
@@ -644,13 +659,14 @@ exports.getWalletSummary = async (req, res) => {
         });
       }
 
-      // For ETH and BSC, also fetch USDT balance
-      if (network.network === 'ETHEREUM' || network.network === 'BSC') {
+      // For ETH, BSC, and TRON, also fetch USDT balance
+      if (network.network === 'ETHEREUM' || network.network === 'BSC' || network.network === 'TRON') {
         try {
           // USDT contract addresses
           const USDT_CONTRACTS = {
             'ETHEREUM': '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-            'BSC': '0x55d398326f99059fF775485246999027B3197955'
+            'BSC': '0x55d398326f99059fF775485246999027B3197955',
+            'TRON': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' // USDT-TRC20
           };
 
           const usdtBalance = await multichainService.getTokenBalance(

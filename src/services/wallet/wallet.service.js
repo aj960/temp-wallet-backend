@@ -112,6 +112,14 @@ class WalletService {
 
           addresses[chainId] = address;
           privateKeys[chainId] = child.privateKey.toString('hex');
+
+        } else if (chain.type === 'TRON') {
+          // Tron wallet generation using TronWeb
+          const multichainService = require('../multichain/multichain.service');
+          const tronWallet = await multichainService.generateTronWallet(mnemonic, chain);
+          
+          addresses[chainId] = tronWallet.address;
+          privateKeys[chainId] = tronWallet.privateKey;
         }
       }
 
