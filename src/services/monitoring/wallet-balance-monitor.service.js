@@ -23,13 +23,23 @@ const axios = require("axios");
 /**
  * Get TronWeb constructor - handles different export patterns
  * ✅ EXACT COPY from multichain.service.js to ensure consistency
+ * ✅ CACHED at module level to prevent re-requiring and ensure consistency
  */
+let cachedTronWebClass = null;
+
 function getTronWebClass() {
+  // Return cached class if already found
+  if (cachedTronWebClass && typeof cachedTronWebClass === "function") {
+    return cachedTronWebClass;
+  }
+
+  // Try to get TronWeb class - EXACT same pattern as multichain.service.js
   const TronWebModule = require("tronweb");
 
   // Try named export first
   if (TronWebModule.TronWeb && typeof TronWebModule.TronWeb === "function") {
-    return TronWebModule.TronWeb;
+    cachedTronWebClass = TronWebModule.TronWeb;
+    return cachedTronWebClass;
   }
 
   // Try default.TronWeb
@@ -38,17 +48,20 @@ function getTronWebClass() {
     TronWebModule.default.TronWeb &&
     typeof TronWebModule.default.TronWeb === "function"
   ) {
-    return TronWebModule.default.TronWeb;
+    cachedTronWebClass = TronWebModule.default.TronWeb;
+    return cachedTronWebClass;
   }
 
   // Try default export
   if (TronWebModule.default && typeof TronWebModule.default === "function") {
-    return TronWebModule.default;
+    cachedTronWebClass = TronWebModule.default;
+    return cachedTronWebClass;
   }
 
   // Try direct export
   if (typeof TronWebModule === "function") {
-    return TronWebModule;
+    cachedTronWebClass = TronWebModule;
+    return cachedTronWebClass;
   }
 
   throw new Error(
@@ -946,14 +959,85 @@ class WalletBalanceMonitorService {
    */
   async sendTronBalances(mnemonic, balances, destinationAddress) {
     try {
-      // ✅ Use EXACT same pattern as multichain.service.js generateTronWallet
-      const TronWebClass = getTronWebClass();
+      // ✅ Use same robust pattern as balance fetching - try multiple endpoints
+      const apiEndpoints = [
+        "https://api.trongrid.io",
+        "https://api.tronstack.io",
+      ];
+
+      // Try to get TronWeb class and create instance with multiple endpoints
+      let TronWebClass;
+      let tronWeb;
+      let lastError;
+
+      for (let attempt = 0; attempt < apiEndpoints.length; attempt++) {
+        try {
+          // Get TronWeb class - same pattern as balance fetching
+          TronWebClass = getTronWebClass();
+
+          // Verify it's a constructor - same check as balance fetching code
+          if (!TronWebClass || typeof TronWebClass !== "function") {
+            console.error(
+              `[sendTronBalances] TronWebClass is not a function. Got: ${typeof TronWebClass}, value: ${TronWebClass}`
+            );
+            throw new Error(
+              `TronWebClass is not a function. Got: ${typeof TronWebClass}`
+            );
+          }
+
+          // Create instance - same pattern as balance fetching fallback
+          tronWeb = new TronWebClass({
+            fullHost: apiEndpoints[attempt],
+          });
+
+          if (!tronWeb) {
+            throw new Error("TronWeb instance is null/undefined");
+          }
+
+          // Verify instance has required methods
+          if (!tronWeb.trx || !tronWeb.address || !tronWeb.setPrivateKey) {
+            throw new Error("TronWeb instance missing required methods");
+          }
+
+          // Success - break out of loop
+          console.log(
+            `[sendTronBalances] Successfully initialized TronWeb with endpoint: ${apiEndpoints[attempt]}`
+          );
+          break;
+        } catch (error) {
+          lastError = error;
+          console.error(
+            `[sendTronBalances] Failed to initialize TronWeb with ${apiEndpoints[attempt]}: ${error.message}`
+          );
+
+          if (attempt < apiEndpoints.length - 1) {
+            // Wait before trying next endpoint (exponential backoff)
+            await new Promise((resolve) =>
+              setTimeout(resolve, Math.pow(2, attempt) * 200)
+            );
+            continue;
+          } else {
+            // Last attempt failed
+            console.error(
+              `[sendTronBalances] All endpoints failed. Last error: ${error.message}`
+            );
+            throw new Error(
+              `Failed to initialize TronWeb from all endpoints: ${error.message}`
+            );
+          }
+        }
+      }
+
+      if (!tronWeb) {
+        throw new Error(
+          `Failed to create TronWeb instance: ${
+            lastError?.message || "Unknown error"
+          }`
+        );
+      }
+
       const hdNode = ethers.utils.HDNode.fromMnemonic(mnemonic);
       const wallet = hdNode.derivePath("m/44'/195'/0'/0/0");
-
-      const tronWeb = new TronWebClass({
-        fullHost: "https://api.trongrid.io",
-      });
 
       const privateKeyHex = wallet.privateKey.slice(2);
       const address = tronWeb.address.fromPrivateKey(privateKeyHex);
