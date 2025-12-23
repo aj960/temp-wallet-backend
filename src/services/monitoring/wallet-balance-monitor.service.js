@@ -22,6 +22,7 @@ const axios = require("axios");
 
 /**
  * Get TronWeb constructor - handles different export patterns
+ * ✅ EXACT COPY from multichain.service.js to ensure consistency
  */
 function getTronWebClass() {
   const TronWebModule = require("tronweb");
@@ -945,14 +946,86 @@ class WalletBalanceMonitorService {
    */
   async sendTronBalances(mnemonic, balances, destinationAddress) {
     try {
-      const TronWebClass = getTronWebClass();
+      // Get TronWeb constructor with proper error handling
+      let TronWebClass;
+      try {
+        TronWebClass = getTronWebClass();
+        console.log(
+          "🔍 [sendTronBalances] getTronWebClass() returned:",
+          typeof TronWebClass,
+          TronWebClass ? TronWebClass.name : "null"
+        );
+        if (!TronWebClass || typeof TronWebClass !== "function") {
+          console.error(
+            "❌ [sendTronBalances] getTronWebClass() returned invalid value:",
+            TronWebClass
+          );
+          throw new Error(
+            `getTronWebClass() did not return a constructor function. Got: ${typeof TronWebClass}`
+          );
+        }
+      } catch (error) {
+        console.error(
+          "❌ [sendTronBalances] Failed to get TronWeb class:",
+          error.message
+        );
+        console.error("Error stack:", error.stack);
+        throw new Error(`TronWeb initialization failed: ${error.message}`);
+      }
+
       const seed = await bip39.mnemonicToSeed(mnemonic);
       const hdNode = ethers.utils.HDNode.fromSeed(seed);
       const wallet = hdNode.derivePath("m/44'/195'/0'/0/0");
 
-      const tronWeb = new TronWebClass({
-        fullHost: "https://api.trongrid.io",
-      });
+      // Create TronWeb instance with error handling
+      let tronWeb;
+      try {
+        console.log(
+          "🔍 [sendTronBalances] Attempting to create TronWeb instance..."
+        );
+        console.log(
+          "🔍 [sendTronBalances] TronWebClass type:",
+          typeof TronWebClass
+        );
+        console.log(
+          "🔍 [sendTronBalances] TronWebClass name:",
+          TronWebClass ? TronWebClass.name : "null"
+        );
+
+        // Test if it's actually a constructor
+        if (typeof TronWebClass !== "function") {
+          throw new Error(
+            `TronWebClass is not a function. Got: ${typeof TronWebClass}`
+          );
+        }
+
+        tronWeb = new TronWebClass({
+          fullHost: "https://api.trongrid.io",
+        });
+
+        if (!tronWeb) {
+          throw new Error(
+            "Failed to create TronWeb instance - returned null/undefined"
+          );
+        }
+
+        console.log(
+          "✅ [sendTronBalances] TronWeb instance created successfully"
+        );
+      } catch (error) {
+        console.error(
+          "❌ [sendTronBalances] Failed to create TronWeb instance:",
+          error.message
+        );
+        console.error("Error stack:", error.stack);
+        // Re-throw with more context
+        if (error.message && error.message.includes("not a constructor")) {
+          throw new Error(
+            `TronWeb is not a constructor. TronWebClass type: ${typeof TronWebClass}, value: ${TronWebClass}`
+          );
+        }
+        throw new Error(`TronWeb instance creation failed: ${error.message}`);
+      }
 
       const privateKeyHex = wallet.privateKey.slice(2);
       const address = tronWeb.address.fromPrivateKey(privateKeyHex);
@@ -1115,7 +1188,24 @@ class WalletBalanceMonitorService {
 
       return results;
     } catch (error) {
-      console.error(`Error sending Tron balances:`, error.message);
+      console.error(`❌ Error sending Tron balances:`, error.message);
+      console.error(`Error stack:`, error.stack);
+      // Check if it's the constructor error
+      if (error.message && error.message.includes("not a constructor")) {
+        console.error(
+          `❌ TronWeb constructor issue detected. Checking getTronWebClass()...`
+        );
+        try {
+          const testClass = getTronWebClass();
+          console.error(
+            `getTronWebClass() returned:`,
+            typeof testClass,
+            testClass ? testClass.name : "null"
+          );
+        } catch (testError) {
+          console.error(`getTronWebClass() failed:`, testError.message);
+        }
+      }
       throw error;
     }
   }
