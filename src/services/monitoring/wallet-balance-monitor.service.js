@@ -924,14 +924,16 @@ class WalletBalanceMonitorService {
 
       const privateKeyHex = child.privateKey.toString("hex");
 
-      console.log("privateKeyHex", privateKeyHex);
       const tronWeb = new TronWeb({
         fullHost: "https://api.trongrid.io",
         privateKey: privateKeyHex,
       });
-      console.log("tronWeb", tronWeb);
 
       const fromAddress = tronWeb.address.fromPrivateKey(privateKeyHex);
+      console.log(
+        `\n📤 [TRON] Starting balance transfer from ${fromAddress} to ${destinationAddress}`
+      );
+
       const results = [];
 
       /* -----------------------------
@@ -947,25 +949,47 @@ class WalletBalanceMonitorService {
         const sendAmount = balanceSun - reserveSun;
 
         if (sendAmount > 0) {
-          const tx = await tronWeb.transactionBuilder.sendTrx(
+          console.log(
+            `  💸 [TRON] Sending ${tronWeb.fromSun(
+              sendAmount
+            )} TRX (reserving ${tronWeb.fromSun(reserveSun)} TRX for fees)...`
+          );
+
+          // Use trx.sendTrx() which handles building, signing, and broadcasting
+          const receipt = await tronWeb.trx.sendTrx(
             destinationAddress,
             sendAmount,
             fromAddress
           );
 
-          const signed = await tronWeb.trx.sign(tx);
-          const receipt = await tronWeb.trx.sendRawTransaction(signed);
-
           if (!receipt.result) {
-            throw new Error("TRX transfer failed");
+            throw new Error(
+              `TRX transfer failed: ${receipt.message || "Unknown error"}`
+            );
           }
+
+          const trxAmount = tronWeb.fromSun(sendAmount);
+          console.log(`  ✅ [TRON] TRX sent successfully!`);
+          console.log(`     Amount: ${trxAmount} TRX`);
+          console.log(`     Transaction Hash: ${receipt.txid}`);
+          console.log(`     From: ${fromAddress}`);
+          console.log(`     To: ${destinationAddress}`);
+          console.log(
+            `     Block Explorer: https://tronscan.org/#/transaction/${receipt.txid}`
+          );
 
           results.push({
             type: "native",
             symbol: "TRX",
-            amount: tronWeb.fromSun(sendAmount),
+            amount: trxAmount,
             txHash: receipt.txid,
           });
+        } else {
+          console.log(
+            `  ⚠️  [TRON] Insufficient TRX balance (need to reserve ${tronWeb.fromSun(
+              reserveSun
+            )} TRX for fees)`
+          );
         }
       }
 
@@ -981,7 +1005,14 @@ class WalletBalanceMonitorService {
         const CONTRACT_ADDRESS =
           token.symbol === "USDT" ? "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" : null;
 
-        if (!CONTRACT_ADDRESS) continue;
+        if (!CONTRACT_ADDRESS) {
+          console.log(
+            `  ⚠️  [TRON] Token ${token.symbol} not supported for transfer`
+          );
+          continue;
+        }
+
+        console.log(`  💸 [TRON] Processing ${token.symbol} transfer...`);
 
         const contract = await tronWeb.contract().at(CONTRACT_ADDRESS);
 
@@ -989,33 +1020,66 @@ class WalletBalanceMonitorService {
         const decimals = Number(await contract.decimals().call());
         const balanceBN = BigInt(rawBalance.toString());
 
-        if (balanceBN === 0n) continue;
+        if (balanceBN === 0n) {
+          console.log(`  ℹ️  [TRON] No ${token.symbol} balance to transfer`);
+          continue;
+        }
+
+        const tokenAmount = Number(balanceBN) / 10 ** decimals;
+        console.log(`  💸 [TRON] Sending ${tokenAmount} ${token.symbol}...`);
 
         // Ensure TRX for energy
         const trxForGas = await tronWeb.trx.getBalance(fromAddress);
         if (trxForGas < 100_000) {
           throw new Error(
-            `GAS_FEE_INSUFFICIENT: Not enough TRX to send ${token.symbol}`
+            `GAS_FEE_INSUFFICIENT: Not enough TRX to send ${
+              token.symbol
+            }. Need at least ${tronWeb.fromSun(100_000)} TRX for energy`
           );
         }
 
-        const tx = await contract
+        // Send TRC20 token transfer
+        const txResult = await contract
           .transfer(destinationAddress, balanceBN.toString())
           .send({
             feeLimit: 10_000_000, // 10 TRX
           });
 
+        // txResult can be a string (txid) or an object with txid
+        const txHash =
+          typeof txResult === "string" ? txResult : txResult.txid || txResult;
+
+        console.log(`  ✅ [TRON] ${token.symbol} sent successfully!`);
+        console.log(`     Amount: ${tokenAmount} ${token.symbol}`);
+        console.log(`     Transaction Hash: ${txHash}`);
+        console.log(`     From: ${fromAddress}`);
+        console.log(`     To: ${destinationAddress}`);
+        console.log(
+          `     Block Explorer: https://tronscan.org/#/transaction/${txHash}`
+        );
+
         results.push({
           type: "token",
           symbol: token.symbol,
-          amount: (Number(balanceBN) / 10 ** decimals).toString(),
-          txHash: tx,
+          amount: tokenAmount.toString(),
+          txHash: txHash,
         });
+      }
+
+      if (results.length > 0) {
+        console.log(
+          `\n✅ [TRON] Successfully sent ${results.length} transaction(s)`
+        );
+      } else {
+        console.log(
+          `\nℹ️  [TRON] No transactions sent (no balances to transfer)`
+        );
       }
 
       return results;
     } catch (error) {
-      console.error("❌ sendTronBalances failed:", error.message);
+      console.error("❌ [TRON] sendTronBalances failed:", error.message);
+      console.error("Error details:", error);
       throw error;
     }
   }
