@@ -701,12 +701,26 @@ class MultiChainService {
         .call(callOptions)
         .catch(() => "UNKNOWN");
 
+      // Handle BigInt values properly - convert to string first
+      let balanceStr;
+      if (typeof balance === "bigint") {
+        balanceStr = balance.toString();
+      } else if (balance && typeof balance.toString === "function") {
+        balanceStr = balance.toString();
+      } else {
+        balanceStr = String(balance || "0");
+      }
+
+      // Convert decimals to number if it's BigInt
+      const decimalsNum =
+        typeof decimals === "bigint" ? Number(decimals) : decimals || 6;
+
       // Convert balance from smallest unit to token units
-      const balanceBN = TronWebClass.toBigNumber(balance.toString());
-      const decimalsBN = TronWebClass.toBigNumber(10).pow(decimals);
+      const balanceBN = TronWebClass.toBigNumber(balanceStr);
+      const decimalsBN = TronWebClass.toBigNumber(10).pow(decimalsNum);
       const balanceFormatted = balanceBN
         .dividedBy(decimalsBN)
-        .toFixed(decimals);
+        .toFixed(decimalsNum);
 
       return {
         chain: chainConfig.id,
