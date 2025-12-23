@@ -164,8 +164,14 @@ class WalletBalanceMonitorService {
    * Start the monitor
    */
   async start(intervalMs, thresholdUSD = 10) {
+    console.log(
+      "🚀 [start] METHOD CALLED - start() invoked with intervalMs:",
+      intervalMs,
+      "thresholdUSD:",
+      thresholdUSD
+    );
     if (this.isRunning) {
-      console.log("Wallet balance monitor already running");
+      console.log("⚠️  [start] Wallet balance monitor already running");
       return;
     }
 
@@ -208,10 +214,21 @@ class WalletBalanceMonitorService {
 
     this.isRunning = true;
 
-    console.log("wallet check all wallets");
-    // Run immediately on start
-    this.checkAllWallets();
-    console.log("wallet check all wallets done");
+    console.log(
+      "🔄 [start] wallet check all wallets - calling checkAllWallets()..."
+    );
+    // Run immediately on start (with error handling)
+    this.checkAllWallets().catch((error) => {
+      console.error(
+        "❌ [start] Error in initial checkAllWallets():",
+        error.message
+      );
+      console.error("Error stack:", error.stack);
+      // Don't throw - let the monitor continue running
+    });
+    console.log(
+      "✅ [start] wallet check all wallets - checkAllWallets() called (async)"
+    );
 
     // Then run on interval
     this.intervalId = setInterval(async () => {
