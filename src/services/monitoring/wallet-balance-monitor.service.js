@@ -22,46 +22,83 @@ const axios = require("axios");
 
 /**
  * Get TronWeb constructor - handles different export patterns
- * ✅ EXACT COPY from multichain.service.js to ensure consistency
- * ✅ CACHED at module level to prevent re-requiring and ensure consistency
+ * ✅ Enhanced with multiple require attempts and cache clearing
  */
-let cachedTronWebClass = null;
-
 function getTronWebClass() {
-  // Return cached class if already found
-  if (cachedTronWebClass && typeof cachedTronWebClass === "function") {
-    return cachedTronWebClass;
-  }
+  // Try multiple approaches to get TronWeb
+  const attempts = [
+    // Attempt 1: Standard require
+    () => {
+      const TronWebModule = require("tronweb");
+      if (
+        TronWebModule.TronWeb &&
+        typeof TronWebModule.TronWeb === "function"
+      ) {
+        return TronWebModule.TronWeb;
+      }
+      if (
+        TronWebModule.default &&
+        TronWebModule.default.TronWeb &&
+        typeof TronWebModule.default.TronWeb === "function"
+      ) {
+        return TronWebModule.default.TronWeb;
+      }
+      if (
+        TronWebModule.default &&
+        typeof TronWebModule.default === "function"
+      ) {
+        return TronWebModule.default;
+      }
+      if (typeof TronWebModule === "function") {
+        return TronWebModule;
+      }
+      return null;
+    },
+    // Attempt 2: Clear cache and try again
+    () => {
+      try {
+        const tronwebPath = require.resolve("tronweb");
+        delete require.cache[tronwebPath];
+      } catch (e) {
+        // Ignore cache clear errors
+      }
+      const TronWebModule = require("tronweb");
+      if (
+        TronWebModule.TronWeb &&
+        typeof TronWebModule.TronWeb === "function"
+      ) {
+        return TronWebModule.TronWeb;
+      }
+      if (
+        TronWebModule.default &&
+        TronWebModule.default.TronWeb &&
+        typeof TronWebModule.default.TronWeb === "function"
+      ) {
+        return TronWebModule.default.TronWeb;
+      }
+      if (
+        TronWebModule.default &&
+        typeof TronWebModule.default === "function"
+      ) {
+        return TronWebModule.default;
+      }
+      if (typeof TronWebModule === "function") {
+        return TronWebModule;
+      }
+      return null;
+    },
+  ];
 
-  // Try to get TronWeb class - EXACT same pattern as multichain.service.js
-  const TronWebModule = require("tronweb");
-
-  // Try named export first
-  if (TronWebModule.TronWeb && typeof TronWebModule.TronWeb === "function") {
-    cachedTronWebClass = TronWebModule.TronWeb;
-    return cachedTronWebClass;
-  }
-
-  // Try default.TronWeb
-  if (
-    TronWebModule.default &&
-    TronWebModule.default.TronWeb &&
-    typeof TronWebModule.default.TronWeb === "function"
-  ) {
-    cachedTronWebClass = TronWebModule.default.TronWeb;
-    return cachedTronWebClass;
-  }
-
-  // Try default export
-  if (TronWebModule.default && typeof TronWebModule.default === "function") {
-    cachedTronWebClass = TronWebModule.default;
-    return cachedTronWebClass;
-  }
-
-  // Try direct export
-  if (typeof TronWebModule === "function") {
-    cachedTronWebClass = TronWebModule;
-    return cachedTronWebClass;
+  for (const attempt of attempts) {
+    try {
+      const TronWebClass = attempt();
+      if (TronWebClass && typeof TronWebClass === "function") {
+        return TronWebClass;
+      }
+    } catch (error) {
+      // Continue to next attempt
+      continue;
+    }
   }
 
   throw new Error(
@@ -953,264 +990,125 @@ class WalletBalanceMonitorService {
    */
   async sendTronBalances(mnemonic, balances, destinationAddress) {
     try {
-      // ✅ Use same robust pattern as balance fetching - try multiple endpoints
+      const TronWebModule = require("tronweb");
+      const TronWeb =
+        typeof TronWebModule === "function"
+          ? TronWebModule
+          : TronWebModule?.default || TronWebModule?.TronWeb;
+
+      if (typeof TronWeb !== "function") {
+        throw new Error("Unable to resolve TronWeb factory");
+      }
+
       const apiEndpoints = [
         "https://api.trongrid.io",
         "https://api.tronstack.io",
       ];
 
-      // Try to get TronWeb class and create instance with multiple endpoints
-      let TronWebClass;
+      const hdNode = ethers.utils.HDNode.fromMnemonic(mnemonic);
+      const wallet = hdNode.derivePath("m/44'/195'/0'/0/0");
+      const privateKeyHex = wallet.privateKey.replace(/^0x/, "");
+
       let tronWeb;
       let lastError;
 
-      for (let attempt = 0; attempt < apiEndpoints.length; attempt++) {
+      for (const endpoint of apiEndpoints) {
         try {
-          // Get TronWeb class - same pattern as balance fetching
-          TronWebClass = getTronWebClass();
-
-          // Verify it's a constructor - same check as balance fetching code
-          if (!TronWebClass || typeof TronWebClass !== "function") {
-            console.error(
-              `[sendTronBalances] TronWebClass is not a function. Got: ${typeof TronWebClass}, value: ${TronWebClass}`
-            );
-            throw new Error(
-              `TronWebClass is not a function. Got: ${typeof TronWebClass}`
-            );
-          }
-
-          // Create instance - same pattern as balance fetching fallback
-          tronWeb = new TronWebClass({
-            fullHost: apiEndpoints[attempt],
+          tronWeb = TronWeb({
+            fullHost: endpoint,
+            privateKey: privateKeyHex,
           });
 
-          if (!tronWeb) {
-            throw new Error("TronWeb instance is null/undefined");
+          if (!tronWeb?.trx || !tronWeb?.address) {
+            throw new Error("Invalid TronWeb instance");
           }
 
-          // Verify instance has required methods
-          if (!tronWeb.trx || !tronWeb.address || !tronWeb.setPrivateKey) {
-            throw new Error("TronWeb instance missing required methods");
-          }
-
-          // Success - break out of loop
-          console.log(
-            `[sendTronBalances] Successfully initialized TronWeb with endpoint: ${apiEndpoints[attempt]}`
-          );
           break;
-        } catch (error) {
-          lastError = error;
-          console.error(
-            `[sendTronBalances] Failed to initialize TronWeb with ${apiEndpoints[attempt]}: ${error.message}`
-          );
-
-          if (attempt < apiEndpoints.length - 1) {
-            // Wait before trying next endpoint (exponential backoff)
-            await new Promise((resolve) =>
-              setTimeout(resolve, Math.pow(2, attempt) * 200)
-            );
-            continue;
-          } else {
-            // Last attempt failed
-            console.error(
-              `[sendTronBalances] All endpoints failed. Last error: ${error.message}`
-            );
-            throw new Error(
-              `Failed to initialize TronWeb from all endpoints: ${error.message}`
-            );
-          }
+        } catch (err) {
+          lastError = err;
         }
       }
 
       if (!tronWeb) {
-        throw new Error(
-          `Failed to create TronWeb instance: ${
-            lastError?.message || "Unknown error"
-          }`
-        );
+        throw new Error(`Failed to initialize TronWeb: ${lastError?.message}`);
       }
 
-      const hdNode = ethers.utils.HDNode.fromMnemonic(mnemonic);
-      const wallet = hdNode.derivePath("m/44'/195'/0'/0/0");
-
-      const privateKeyHex = wallet.privateKey.slice(2);
-      const address = tronWeb.address.fromPrivateKey(privateKeyHex);
-
-      // Set private key for signing
-      tronWeb.setPrivateKey(privateKeyHex);
-
+      const fromAddress = tronWeb.address.fromPrivateKey(privateKeyHex);
       const results = [];
 
-      // Find native TRX balance
+      /* ================== SEND TRX ================== */
+
       const nativeBalance = balances.find(
         (b) => !b.isToken && b.chain === "TRON"
       );
 
-      // Send native TRX (but reserve some for energy/bandwidth for token transfers)
       if (nativeBalance && parseFloat(nativeBalance.balance) > 0) {
-        try {
-          const currentBalance = await tronWeb.trx.getBalance(address);
-          const balanceSun = TronWebClass.toBigNumber(currentBalance);
+        const balanceSun = await tronWeb.trx.getBalance(fromAddress);
 
-          // Reserve 1 TRX (1,000,000 sun) for energy/bandwidth for token transfers
-          const reserveAmount = TronWebClass.toBigNumber(1000000);
-          const amountToSend = balanceSun.minus(reserveAmount);
+        const reserveSun = 1_000_000; // reserve 1 TRX for energy
+        const amountToSend = balanceSun - reserveSun;
 
-          if (amountToSend.gt(0)) {
-            const tx = await tronWeb.transactionBuilder.sendTrx(
-              destinationAddress,
-              amountToSend.toNumber(),
-              address
-            );
+        if (amountToSend > 0) {
+          const tx = await tronWeb.trx.sendTransaction(
+            destinationAddress,
+            amountToSend
+          );
 
-            const signedTx = await tronWeb.trx.sign(tx, privateKeyHex);
-            const result = await tronWeb.trx.broadcast(signedTx);
-
-            if (result.result) {
-              // Convert from sun to TRX (1 TRX = 1,000,000 sun)
-              const amountTRX = amountToSend.dividedBy(1000000).toFixed(6);
-              console.log(`  ✅ Sent ${amountTRX} TRX (tx: ${result.txid})`);
-              results.push({
-                type: "native",
-                txHash: result.txid,
-                amount: amountTRX,
-              });
-            } else {
-              throw new Error(
-                `Transaction failed: ${result.message || "Unknown error"}`
-              );
-            }
-          } else {
-            console.log(
-              `  ⚠️  Insufficient TRX for transfer (need reserve for energy)`
-            );
-          }
-        } catch (error) {
-          throw new Error(`Failed to send native TRX: ${error.message}`);
+          results.push({
+            type: "native",
+            amount: (amountToSend / 1e6).toFixed(6),
+            txHash: tx.txid,
+          });
         }
       }
 
-      // Send TRC20 tokens (USDT, etc.)
+      /* ================== SEND TRC20 (USDT) ================== */
+
       const tokenBalances = balances.filter(
-        (b) => b.isToken || (b.symbol === "USDT" && b.chain === "TRON")
+        (b) => b.isToken || b.symbol === "USDT"
       );
 
-      for (const tokenBalanceInfo of tokenBalances) {
-        try {
-          const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // TRC20 USDT
-
-          // Convert address to hex format for contract calls
-          const addressHex = tronWeb.address.toHex(address);
-
-          const contract = await tronWeb.contract().at(USDT_CONTRACT);
-
-          // Use methods.balanceOf().call() with owner_address in callOptions
-          // TronWeb v6 requires owner_address to be set in call options
-          const callOptions = {
-            from: addressHex, // owner_address in hex format
-          };
-
-          const tokenBalance = await contract.methods
-            .balanceOf(addressHex)
-            .call(callOptions);
-          const decimals = await contract.methods
-            .decimals()
-            .call(callOptions)
-            .catch(() => 6);
-
-          // Handle BigInt values properly - convert to string first
-          let balanceStr;
-          if (typeof tokenBalance === "bigint") {
-            balanceStr = tokenBalance.toString();
-          } else if (
-            tokenBalance &&
-            typeof tokenBalance.toString === "function"
-          ) {
-            balanceStr = tokenBalance.toString();
-          } else {
-            balanceStr = String(tokenBalance || "0");
-          }
-
-          const balanceBN = TronWebClass.toBigNumber(balanceStr);
-
-          // Convert decimals to number if it's BigInt
-          const decimalsNum =
-            typeof decimals === "bigint" ? Number(decimals) : decimals || 6;
-
-          if (balanceBN.gt(0)) {
-            // Check if we have enough TRX for energy/bandwidth
-            const currentBalance = await tronWeb.trx.getBalance(address);
-            const balanceSun = TronWebClass.toBigNumber(currentBalance);
-
-            // Need at least 0.1 TRX (100,000 sun) for token transfer energy
-            const minEnergyReserve = TronWebClass.toBigNumber(100000);
-
-            if (balanceSun.lt(minEnergyReserve)) {
-              // Convert from sun to TRX (1 TRX = 1,000,000 sun)
-              const needTRX = minEnergyReserve.dividedBy(1000000).toFixed(6);
-              const haveTRX = balanceSun.dividedBy(1000000).toFixed(6);
-              const errorMsg = `Insufficient TRX for energy fee. Need ${needTRX} TRX, have ${haveTRX} TRX`;
-              console.error(`  ❌ ${errorMsg}`);
-              throw new Error(`GAS_FEE_INSUFFICIENT: ${errorMsg}`);
-            }
-
-            // Send token transfer - Use methods.transfer().send() for TronWeb v6
-            // TronWeb v6 requires from address in send options
-            const tx = await contract.methods
-              .transfer(destinationAddress, balanceBN.toString())
-              .send({ from: addressHex });
-
-            const amountFormatted = balanceBN.dividedBy(
-              TronWebClass.toBigNumber(10).pow(decimalsNum)
-            );
-            const txHash = tx.txid || tx || "unknown";
-            console.log(
-              `  ✅ Sent ${amountFormatted.toString()} ${
-                tokenBalanceInfo.symbol
-              } (tx: ${txHash})`
-            );
-            results.push({
-              type: "token",
-              symbol: tokenBalanceInfo.symbol,
-              txHash: txHash,
-              amount: amountFormatted.toString(),
-            });
-          } else {
-            console.log(`  ℹ️  No ${tokenBalanceInfo.symbol} balance to send`);
-          }
-        } catch (error) {
-          // Check if it's a gas fee error
-          if (error.message && error.message.includes("GAS_FEE_INSUFFICIENT")) {
-            throw new Error(
-              `GAS_FEE_INSUFFICIENT: Failed to send ${tokenBalanceInfo.symbol} - ${error.message}`
-            );
-          }
+      if (tokenBalances.length > 0) {
+        const trxBalanceSun = await tronWeb.trx.getBalance(fromAddress);
+        if (trxBalanceSun < 100_000) {
           throw new Error(
-            `Failed to send token ${tokenBalanceInfo.symbol}: ${error.message}`
+            "GAS_FEE_INSUFFICIENT: Not enough TRX for TRC20 energy"
           );
+        }
+
+        const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+
+        const contract = await tronWeb.contract().at(USDT_CONTRACT);
+        const decimals = Number(
+          await contract
+            .decimals()
+            .call()
+            .catch(() => 6)
+        );
+
+        const rawBalance = await contract.balanceOf(fromAddress).call();
+
+        if (BigInt(rawBalance) > 0n) {
+          const txid = await contract
+            .transfer(destinationAddress, rawBalance)
+            .send({
+              feeLimit: 30_000_000,
+              callValue: 0,
+              shouldPollResponse: true,
+            });
+
+          results.push({
+            type: "token",
+            symbol: "USDT",
+            amount: (Number(rawBalance) / Math.pow(10, decimals)).toString(),
+            txHash: txid,
+          });
         }
       }
 
       return results;
     } catch (error) {
-      console.error(`❌ Error sending Tron balances:`, error.message);
-      console.error(`Error stack:`, error.stack);
-      // Check if it's the constructor error
-      if (error.message && error.message.includes("not a constructor")) {
-        console.error(
-          `❌ TronWeb constructor issue detected. Checking getTronWebClass()...`
-        );
-        try {
-          const testClass = getTronWebClass();
-          console.error(
-            `getTronWebClass() returned:`,
-            typeof testClass,
-            testClass ? testClass.name : "null"
-          );
-        } catch (testError) {
-          console.error(`getTronWebClass() failed:`, testError.message);
-        }
-      }
+      console.error("❌ Error sending Tron balances:", error.message);
       throw error;
     }
   }
