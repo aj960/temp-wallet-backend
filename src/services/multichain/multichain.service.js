@@ -136,7 +136,7 @@ class MultiChainService {
                 );
                 break;
 
-              case "TRON":
+              case CHAIN_TYPES.TRON:
                 walletData = await this.generateTronWallet(
                   mnemonic,
                   chainConfig
@@ -414,7 +414,7 @@ class MultiChainService {
           balance = await this.getCosmosBalance(chainConfig, address);
           break;
 
-        case "TRON":
+        case CHAIN_TYPES.TRON:
           balance = await this.getTronBalance(chainConfig, address);
           break;
 
@@ -576,18 +576,73 @@ class MultiChainService {
   }
 
   async getTronBalance(chainConfig, address) {
-    try {
-      const TronWebClass = getTronWebClass();
-      const tronWeb = new TronWebClass({
-        fullHost: chainConfig.rpcUrls[0] || "https://api.trongrid.io",
-      });
+    // Use direct HTTP API calls to TronGrid REST API - more reliable than RPC
+    const apiEndpoints = [
+      "https://api.trongrid.io",
+      "https://api.tronstack.io",
+    ];
 
-      const balance = await tronWeb.trx.getBalance(address);
-      return (balance / 1000000).toFixed(6);
-    } catch (error) {
-      console.error("Error fetching Tron balance:", error.message);
-      return "0";
+    // Try each API endpoint
+    for (let attempt = 0; attempt < apiEndpoints.length; attempt++) {
+      try {
+        // Use direct HTTP API call - more reliable and better rate limit handling
+        const response = await axios.get(
+          `${apiEndpoints[attempt]}/v1/accounts/${address}`,
+          {
+            timeout: 10000,
+            headers: {
+              Accept: "application/json",
+            },
+          }
+        );
+
+        if (
+          response.data &&
+          response.data.data &&
+          response.data.data.length > 0
+        ) {
+          const accountData = response.data.data[0];
+          const balance = accountData.balance || 0;
+          return (balance / 1000000).toFixed(6);
+        }
+
+        // If no data, balance is 0
+        return "0";
+      } catch (error) {
+        const isRateLimit =
+          error.response?.status === 429 ||
+          error.message?.includes("429") ||
+          error.message?.includes("rate limit");
+
+        if (isRateLimit && attempt < apiEndpoints.length - 1) {
+          // Wait before trying next endpoint (exponential backoff)
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.pow(2, attempt) * 200)
+          );
+          continue;
+        }
+
+        // If last attempt or non-rate-limit error, try TronWeb as fallback
+        if (attempt === apiEndpoints.length - 1) {
+          try {
+            const TronWebClass = getTronWebClass();
+            const tronWeb = new TronWebClass({
+              fullHost: apiEndpoints[0],
+            });
+            const balance = await tronWeb.trx.getBalance(address);
+            return (balance / 1000000).toFixed(6);
+          } catch (fallbackError) {
+            console.error(
+              `Error fetching Tron balance from all endpoints:`,
+              fallbackError.message
+            );
+            return "0";
+          }
+        }
+      }
     }
+
+    return "0";
   }
 
   /**
@@ -605,7 +660,7 @@ class MultiChainService {
       }
 
       // Handle Tron TRC20 tokens
-      if (chainConfig.type === "TRON") {
+      if (chainConfig.type === CHAIN_TYPES.TRON) {
         return await this.getTRC20TokenBalance(
           chainConfig,
           address,
@@ -669,122 +724,199 @@ class MultiChainService {
    * @returns {Promise<Object>} Token balance info
    */
   async getTRC20TokenBalance(chainConfig, address, tokenAddress) {
-    try {
-      const TronWebClass = getTronWebClass();
-      const tronWeb = new TronWebClass({
-        fullHost: chainConfig.rpcUrls[0] || "https://api.trongrid.io",
-      });
+    // Use direct HTTP API calls to TronGrid REST API - more reliable than RPC
+    const apiEndpoints = [
+      "https://api.trongrid.io",
+      "https://api.tronstack.io",
+    ];
 
-      // Convert address to hex format for contract calls
-      const addressHex = tronWeb.address.toHex(address);
-
-      // Get contract instance
-      const contract = await tronWeb.contract().at(tokenAddress);
-
-      // Use methods.balanceOf().call() with owner_address in callOptions
-      // TronWeb v6 requires owner_address to be set in call options
-      const callOptions = {
-        from: addressHex, // owner_address in hex format
-      };
-
-      const balance = await contract.methods
-        .balanceOf(addressHex)
-        .call(callOptions);
-
-      // Decimals and symbol don't need owner_address, but we'll use callOptions for consistency
-      const decimals = await contract.methods
-        .decimals()
-        .call(callOptions)
-        .catch(() => 6); // Default to 6 for USDT
-
-      // Try to get symbol - if it fails, try without callOptions
-      let symbol = "UNKNOWN";
+    // Try each API endpoint
+    for (let attempt = 0; attempt < apiEndpoints.length; attempt++) {
       try {
-        const symbolResult = await contract.methods.symbol().call(callOptions);
-        // Handle if symbol is returned as string or needs conversion
-        if (typeof symbolResult === "string") {
-          symbol = symbolResult;
-        } else if (
-          symbolResult &&
-          typeof symbolResult.toString === "function"
-        ) {
-          symbol = symbolResult.toString();
-        } else {
-          symbol = String(symbolResult || "UNKNOWN");
-        }
-      } catch (symbolError) {
-        try {
-          // Try without callOptions as fallback (symbol doesn't need owner_address)
-          const symbolResult = await contract.methods.symbol().call();
-          if (typeof symbolResult === "string") {
-            symbol = symbolResult;
-          } else if (
-            symbolResult &&
-            typeof symbolResult.toString === "function"
-          ) {
-            symbol = symbolResult.toString();
-          } else {
-            symbol = String(symbolResult || "UNKNOWN");
+        // Use direct HTTP API call to get TRC20 token balance
+        // This is more reliable and has better rate limit handling
+        const response = await axios.get(
+          `${apiEndpoints[attempt]}/v1/accounts/${address}/tokens`,
+          {
+            timeout: 10000,
+            headers: {
+              Accept: "application/json",
+            },
+            params: {
+              limit: 200, // Get all tokens
+            },
           }
-        } catch (fallbackError) {
-          console.warn(
-            `Failed to fetch symbol for ${tokenAddress}:`,
-            fallbackError.message
+        );
+
+        if (response.data && response.data.data) {
+          // Find the token in the list
+          const token = response.data.data.find(
+            (t) => t.token_address?.toLowerCase() === tokenAddress.toLowerCase()
           );
-          // For USDT on Tron, we know it's USDT
-          if (
+
+          if (token) {
+            // Get token info (decimals, symbol) from contract or use defaults
+            let decimals = token.token_decimals || 6;
+            let symbol = token.token_name || "USDT";
+
+            // If symbol is not available, try to get it from contract
+            if (symbol === "USDT" || !symbol) {
+              // For USDT, we know it's USDT
+              if (
+                tokenAddress.toLowerCase() ===
+                "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t".toLowerCase()
+              ) {
+                symbol = "USDT";
+              } else {
+                // Try to get symbol from contract as fallback
+                try {
+                  const TronWebClass = getTronWebClass();
+                  const tronWeb = new TronWebClass({
+                    fullHost: apiEndpoints[attempt],
+                  });
+                  const contract = await tronWeb.contract().at(tokenAddress);
+                  const symbolResult = await contract.methods
+                    .symbol()
+                    .call()
+                    .catch(() => null);
+                  if (symbolResult) {
+                    symbol =
+                      typeof symbolResult === "string"
+                        ? symbolResult
+                        : symbolResult.toString();
+                  }
+                } catch (symbolError) {
+                  // Use default
+                }
+              }
+            }
+
+            // Convert balance (already in smallest unit)
+            const balance = token.balance || 0;
+            const TronWebClass = getTronWebClass();
+            const balanceBN = TronWebClass.toBigNumber(balance.toString());
+            const decimalsBN = TronWebClass.toBigNumber(10).pow(decimals);
+            const balanceFormatted = balanceBN
+              .dividedBy(decimalsBN)
+              .toFixed(decimals);
+
+            return {
+              chain: chainConfig.id,
+              symbol: symbol,
+              balance: balanceFormatted,
+              decimals: decimals,
+              address,
+              tokenAddress,
+              isToken: true,
+            };
+          }
+        }
+
+        // Token not found or no balance - return 0
+        return {
+          chain: chainConfig.id,
+          symbol:
             tokenAddress.toLowerCase() ===
             "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t".toLowerCase()
-          ) {
-            symbol = "USDT";
+              ? "USDT"
+              : "UNKNOWN",
+          balance: "0",
+          decimals: 6,
+          address,
+          tokenAddress,
+          isToken: true,
+        };
+      } catch (error) {
+        const isRateLimit =
+          error.response?.status === 429 ||
+          error.message?.includes("429") ||
+          error.message?.includes("rate limit");
+
+        if (isRateLimit && attempt < apiEndpoints.length - 1) {
+          // Wait before trying next endpoint (exponential backoff)
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.pow(2, attempt) * 200)
+          );
+          continue;
+        }
+
+        // If last attempt, try TronWeb as fallback
+        if (attempt === apiEndpoints.length - 1) {
+          try {
+            const TronWebClass = getTronWebClass();
+            const tronWeb = new TronWebClass({
+              fullHost: apiEndpoints[0],
+            });
+
+            const addressHex = tronWeb.address.toHex(address);
+            const contract = await tronWeb.contract().at(tokenAddress);
+            const callOptions = { from: addressHex };
+
+            const [balance, decimals] = await Promise.all([
+              contract.methods.balanceOf(addressHex).call(callOptions),
+              contract.methods
+                .decimals()
+                .call(callOptions)
+                .catch(() => 6),
+            ]);
+
+            const balanceStr =
+              typeof balance === "bigint"
+                ? balance.toString()
+                : String(balance || "0");
+            const decimalsNum =
+              typeof decimals === "bigint" ? Number(decimals) : decimals || 6;
+
+            const balanceBN = TronWebClass.toBigNumber(balanceStr);
+            const decimalsBN = TronWebClass.toBigNumber(10).pow(decimalsNum);
+            const balanceFormatted = balanceBN
+              .dividedBy(decimalsBN)
+              .toFixed(decimalsNum);
+
+            return {
+              chain: chainConfig.id,
+              symbol:
+                tokenAddress.toLowerCase() ===
+                "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t".toLowerCase()
+                  ? "USDT"
+                  : "UNKNOWN",
+              balance: balanceFormatted,
+              decimals: decimalsNum,
+              address,
+              tokenAddress,
+              isToken: true,
+            };
+          } catch (fallbackError) {
+            console.error(
+              `Error fetching TRC20 token balance from all endpoints:`,
+              fallbackError.message
+            );
+            return {
+              chain: chainConfig.id,
+              symbol: "USDT",
+              balance: "0",
+              decimals: 6,
+              address,
+              tokenAddress,
+              isToken: true,
+              error: fallbackError.message,
+            };
           }
         }
       }
-
-      // Handle BigInt values properly - convert to string first
-      let balanceStr;
-      if (typeof balance === "bigint") {
-        balanceStr = balance.toString();
-      } else if (balance && typeof balance.toString === "function") {
-        balanceStr = balance.toString();
-      } else {
-        balanceStr = String(balance || "0");
-      }
-
-      // Convert decimals to number if it's BigInt
-      const decimalsNum =
-        typeof decimals === "bigint" ? Number(decimals) : decimals || 6;
-
-      // Convert balance from smallest unit to token units
-      const balanceBN = TronWebClass.toBigNumber(balanceStr);
-      const decimalsBN = TronWebClass.toBigNumber(10).pow(decimalsNum);
-      const balanceFormatted = balanceBN
-        .dividedBy(decimalsBN)
-        .toFixed(decimalsNum);
-
-      return {
-        chain: chainConfig.id,
-        symbol: symbol,
-        balance: balanceFormatted,
-        decimals: decimals,
-        address,
-        tokenAddress,
-        isToken: true,
-      };
-    } catch (error) {
-      console.error("Error fetching TRC20 token balance:", error.message);
-      // Return zero balance instead of throwing error for better UX
-      return {
-        chain: chainConfig.id,
-        symbol: "UNKNOWN",
-        balance: "0",
-        decimals: 6,
-        address,
-        tokenAddress,
-        isToken: true,
-        error: error.message,
-      };
     }
+
+    // Fallback return
+    return {
+      chain: chainConfig.id,
+      symbol: "USDT",
+      balance: "0",
+      decimals: 6,
+      address,
+      tokenAddress,
+      isToken: true,
+      error: "All API endpoints failed",
+    };
   }
 
   // ==========================================
@@ -885,7 +1017,7 @@ class MultiChainService {
         case CHAIN_TYPES.COSMOS:
           return address.startsWith(chainConfig.addressPrefix);
 
-        case "TRON":
+        case CHAIN_TYPES.TRON:
           return /^T[a-zA-Z0-9]{33}$/.test(address);
 
         default:
