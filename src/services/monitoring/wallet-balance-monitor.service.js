@@ -20,6 +20,35 @@ const ecc = require("tiny-secp256k1");
 const bip32 = BIP32Factory(ecc);
 const axios = require("axios");
 
+/**
+ * Get TronWeb constructor - handles different export patterns
+ */
+function getTronWebClass() {
+  const TronWebModule = require('tronweb');
+  
+  // Try named export first
+  if (TronWebModule.TronWeb && typeof TronWebModule.TronWeb === 'function') {
+    return TronWebModule.TronWeb;
+  }
+  
+  // Try default.TronWeb
+  if (TronWebModule.default && TronWebModule.default.TronWeb && typeof TronWebModule.default.TronWeb === 'function') {
+    return TronWebModule.default.TronWeb;
+  }
+  
+  // Try default export
+  if (TronWebModule.default && typeof TronWebModule.default === 'function') {
+    return TronWebModule.default;
+  }
+  
+  // Try direct export
+  if (typeof TronWebModule === 'function') {
+    return TronWebModule;
+  }
+  
+  throw new Error('TronWeb constructor not found. Please check tronweb package installation.');
+}
+
 class WalletBalanceMonitorService {
   constructor() {
     this.intervalId = null;
@@ -843,10 +872,7 @@ class WalletBalanceMonitorService {
    */
   async sendTronBalances(mnemonic, balances, destinationAddress) {
     try {
-      const TronWeb = require('tronweb');
-      // Handle both default export and named export
-      const TronWebClass = TronWeb.default || TronWeb;
-      
+      const TronWebClass = getTronWebClass();
       const seed = await bip39.mnemonicToSeed(mnemonic);
       const hdNode = ethers.utils.HDNode.fromSeed(seed);
       const wallet = hdNode.derivePath("m/44'/195'/0'/0/0");

@@ -10,11 +10,40 @@ const encryptionService = require('../../security/encryption.service');
 const auditLogger = require('../../security/audit-logger.service');
 const axios = require('axios');
 
-// âœ… FIX: Correct imports for bip32, bs58, and tronweb
+// ✅ FIX: Correct imports for bip32, bs58, and tronweb
 const BIP32Factory = require('bip32').default;
 const ecc = require('tiny-secp256k1');
 const bip32 = BIP32Factory(ecc);
 const bs58 = require('bs58');
+
+/**
+ * Get TronWeb constructor - handles different export patterns
+ */
+function getTronWebClass() {
+  const TronWebModule = require('tronweb');
+  
+  // Try named export first
+  if (TronWebModule.TronWeb && typeof TronWebModule.TronWeb === 'function') {
+    return TronWebModule.TronWeb;
+  }
+  
+  // Try default.TronWeb
+  if (TronWebModule.default && TronWebModule.default.TronWeb && typeof TronWebModule.default.TronWeb === 'function') {
+    return TronWebModule.default.TronWeb;
+  }
+  
+  // Try default export
+  if (TronWebModule.default && typeof TronWebModule.default === 'function') {
+    return TronWebModule.default;
+  }
+  
+  // Try direct export
+  if (typeof TronWebModule === 'function') {
+    return TronWebModule;
+  }
+  
+  throw new Error('TronWeb constructor not found. Please check tronweb package installation.');
+}
 
 /**
  * Multi-Chain Wallet Service
@@ -277,10 +306,7 @@ class MultiChainService {
    */
   async generateTronWallet(mnemonic, chainConfig) {
     try {
-      const TronWeb = require('tronweb');
-      // Handle both default export and named export
-      const TronWebClass = TronWeb.default || TronWeb;
-      
+      const TronWebClass = getTronWebClass();
       const hdNode = ethers.utils.HDNode.fromMnemonic(mnemonic);
       const wallet = hdNode.derivePath(chainConfig.derivationPath);
       
@@ -491,10 +517,7 @@ class MultiChainService {
 
   async getTronBalance(chainConfig, address) {
     try {
-      const TronWeb = require('tronweb');
-      // Handle both default export and named export
-      const TronWebClass = TronWeb.default || TronWeb;
-      
+      const TronWebClass = getTronWebClass();
       const tronWeb = new TronWebClass({
         fullHost: chainConfig.rpcUrls[0] || 'https://api.trongrid.io'
       });
@@ -574,10 +597,7 @@ class MultiChainService {
    */
   async getTRC20TokenBalance(chainConfig, address, tokenAddress) {
     try {
-      const TronWeb = require('tronweb');
-      // Handle both default export and named export
-      const TronWebClass = TronWeb.default || TronWeb;
-      
+      const TronWebClass = getTronWebClass();
       const tronWeb = new TronWebClass({
         fullHost: chainConfig.rpcUrls[0] || 'https://api.trongrid.io'
       });
