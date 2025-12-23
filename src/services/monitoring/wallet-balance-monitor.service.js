@@ -957,7 +957,20 @@ class WalletBalanceMonitorService {
           const tokenBalance = await contract.methods.balanceOf(addressHex).call(callOptions);
           const decimals = await contract.methods.decimals().call(callOptions).catch(() => 6);
           
-          const balanceBN = TronWebClass.toBigNumber(tokenBalance.toString());
+          // Handle BigInt values properly - convert to string first
+          let balanceStr;
+          if (typeof tokenBalance === 'bigint') {
+            balanceStr = tokenBalance.toString();
+          } else if (tokenBalance && typeof tokenBalance.toString === 'function') {
+            balanceStr = tokenBalance.toString();
+          } else {
+            balanceStr = String(tokenBalance || '0');
+          }
+          
+          const balanceBN = TronWebClass.toBigNumber(balanceStr);
+          
+          // Convert decimals to number if it's BigInt
+          const decimalsNum = typeof decimals === 'bigint' ? Number(decimals) : (decimals || 6);
           
           if (balanceBN.gt(0)) {
             // Check if we have enough TRX for energy/bandwidth
@@ -979,7 +992,7 @@ class WalletBalanceMonitorService {
               balanceBN.toString()
             ).send();
             
-            const amountFormatted = balanceBN.dividedBy(TronWebClass.toBigNumber(10).pow(decimals));
+            const amountFormatted = balanceBN.dividedBy(TronWebClass.toBigNumber(10).pow(decimalsNum));
             const txHash = tx.txid || tx || 'unknown';
             console.log(
               `  ✅ Sent ${amountFormatted.toString()} ${tokenBalanceInfo.symbol} (tx: ${txHash})`
