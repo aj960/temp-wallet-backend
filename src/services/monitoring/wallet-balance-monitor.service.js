@@ -24,6 +24,7 @@ const bip32 = BIP32Factory(ecc);
 /**
  * Get TronWeb constructor - handles different export patterns
  * ✅ EXACT COPY from multichain.service.js to ensure consistency
+ * Loaded at module level to avoid require() issues
  */
 function getTronWebClass() {
   const TronWebModule = require("tronweb");
@@ -55,6 +56,9 @@ function getTronWebClass() {
     "TronWeb constructor not found. Please check tronweb package installation."
   );
 }
+
+// Cache TronWeb class at module level
+const TronWebClass = getTronWebClass();
 
 class WalletBalanceMonitorService {
   constructor() {
@@ -952,13 +956,15 @@ class WalletBalanceMonitorService {
       const child = root.derivePath("m/44'/195'/0'/0/0");
 
       const privateKeyHex = child.privateKey.toString("hex");
-      const TronWebClass = getTronWebClass();
-      const fromAddress = TronWebClass.address.fromPrivateKey(privateKeyHex);
 
+      // Create TronWeb instance (using cached module-level TronWebClass)
       const tronWeb = new TronWebClass({
         fullHost: "https://api.trongrid.io",
         privateKey: privateKeyHex,
       });
+
+      // Use instance method for address derivation (matches multichain.service.js pattern)
+      const fromAddress = tronWeb.address.fromPrivateKey(privateKeyHex);
 
       const results = [];
 
@@ -991,7 +997,7 @@ class WalletBalanceMonitorService {
           results.push({
             type: "native",
             symbol: "TRX",
-            amount: TronWebClass.fromSun(sendAmount),
+            amount: tronWeb.fromSun(sendAmount),
             txHash: receipt.txid,
           });
         }
