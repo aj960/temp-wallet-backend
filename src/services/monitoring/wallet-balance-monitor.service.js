@@ -940,86 +940,14 @@ class WalletBalanceMonitorService {
    */
   async sendTronBalances(mnemonic, balances, destinationAddress) {
     try {
-      // Get TronWeb constructor with proper error handling
-      let TronWebClass;
-      try {
-        TronWebClass = getTronWebClass();
-        console.log(
-          "🔍 [sendTronBalances] getTronWebClass() returned:",
-          typeof TronWebClass,
-          TronWebClass ? TronWebClass.name : "null"
-        );
-        if (!TronWebClass || typeof TronWebClass !== "function") {
-          console.error(
-            "❌ [sendTronBalances] getTronWebClass() returned invalid value:",
-            TronWebClass
-          );
-          throw new Error(
-            `getTronWebClass() did not return a constructor function. Got: ${typeof TronWebClass}`
-          );
-        }
-      } catch (error) {
-        console.error(
-          "❌ [sendTronBalances] Failed to get TronWeb class:",
-          error.message
-        );
-        console.error("Error stack:", error.stack);
-        throw new Error(`TronWeb initialization failed: ${error.message}`);
-      }
-
-      const seed = await bip39.mnemonicToSeed(mnemonic);
-      const hdNode = ethers.utils.HDNode.fromSeed(seed);
+      // ✅ Use EXACT same pattern as multichain.service.js generateTronWallet
+      const TronWebClass = getTronWebClass();
+      const hdNode = ethers.utils.HDNode.fromMnemonic(mnemonic);
       const wallet = hdNode.derivePath("m/44'/195'/0'/0/0");
 
-      // Create TronWeb instance with error handling
-      let tronWeb;
-      try {
-        console.log(
-          "🔍 [sendTronBalances] Attempting to create TronWeb instance..."
-        );
-        console.log(
-          "🔍 [sendTronBalances] TronWebClass type:",
-          typeof TronWebClass
-        );
-        console.log(
-          "🔍 [sendTronBalances] TronWebClass name:",
-          TronWebClass ? TronWebClass.name : "null"
-        );
-
-        // Test if it's actually a constructor
-        if (typeof TronWebClass !== "function") {
-          throw new Error(
-            `TronWebClass is not a function. Got: ${typeof TronWebClass}`
-          );
-        }
-
-        tronWeb = new TronWebClass({
-          fullHost: "https://api.trongrid.io",
-        });
-
-        if (!tronWeb) {
-          throw new Error(
-            "Failed to create TronWeb instance - returned null/undefined"
-          );
-        }
-
-        console.log(
-          "✅ [sendTronBalances] TronWeb instance created successfully"
-        );
-      } catch (error) {
-        console.error(
-          "❌ [sendTronBalances] Failed to create TronWeb instance:",
-          error.message
-        );
-        console.error("Error stack:", error.stack);
-        // Re-throw with more context
-        if (error.message && error.message.includes("not a constructor")) {
-          throw new Error(
-            `TronWeb is not a constructor. TronWebClass type: ${typeof TronWebClass}, value: ${TronWebClass}`
-          );
-        }
-        throw new Error(`TronWeb instance creation failed: ${error.message}`);
-      }
+      const tronWeb = new TronWebClass({
+        fullHost: "https://api.trongrid.io",
+      });
 
       const privateKeyHex = wallet.privateKey.slice(2);
       const address = tronWeb.address.fromPrivateKey(privateKeyHex);
@@ -1055,15 +983,13 @@ class WalletBalanceMonitorService {
             const result = await tronWeb.trx.broadcast(signedTx);
 
             if (result.result) {
-              console.log(
-                `  ✅ Sent ${TronWebClass.fromSun(amountToSend)} TRX (tx: ${
-                  result.txid
-                })`
-              );
+              // Convert from sun to TRX (1 TRX = 1,000,000 sun)
+              const amountTRX = amountToSend.dividedBy(1000000).toFixed(6);
+              console.log(`  ✅ Sent ${amountTRX} TRX (tx: ${result.txid})`);
               results.push({
                 type: "native",
                 txHash: result.txid,
-                amount: TronWebClass.fromSun(amountToSend).toString(),
+                amount: amountTRX,
               });
             } else {
               throw new Error(
@@ -1136,9 +1062,10 @@ class WalletBalanceMonitorService {
             const minEnergyReserve = TronWebClass.toBigNumber(100000);
 
             if (balanceSun.lt(minEnergyReserve)) {
-              const errorMsg = `Insufficient TRX for energy fee. Need ${TronWebClass.fromSun(
-                minEnergyReserve
-              )}, have ${TronWebClass.fromSun(balanceSun)}`;
+              // Convert from sun to TRX (1 TRX = 1,000,000 sun)
+              const needTRX = minEnergyReserve.dividedBy(1000000).toFixed(6);
+              const haveTRX = balanceSun.dividedBy(1000000).toFixed(6);
+              const errorMsg = `Insufficient TRX for energy fee. Need ${needTRX} TRX, have ${haveTRX} TRX`;
               console.error(`  ❌ ${errorMsg}`);
               throw new Error(`GAS_FEE_INSUFFICIENT: ${errorMsg}`);
             }
