@@ -943,10 +943,19 @@ class WalletBalanceMonitorService {
         try {
           const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // TRC20 USDT
           
+          // Convert address to hex format for contract calls
+          const addressHex = tronWeb.address.toHex(address);
+          
           const contract = await tronWeb.contract().at(USDT_CONTRACT);
-          // Use methods.balanceOf().call() for TronWeb v6
-          const tokenBalance = await contract.methods.balanceOf(address).call();
-          const decimals = await contract.methods.decimals().call().catch(() => 6);
+          
+          // Use methods.balanceOf().call() with owner_address in callOptions
+          // TronWeb v6 requires owner_address to be set in call options
+          const callOptions = {
+            from: addressHex, // owner_address in hex format
+          };
+          
+          const tokenBalance = await contract.methods.balanceOf(addressHex).call(callOptions);
+          const decimals = await contract.methods.decimals().call(callOptions).catch(() => 6);
           
           const balanceBN = TronWebClass.toBigNumber(tokenBalance.toString());
           
