@@ -602,32 +602,17 @@ class MultiChainService {
         fullHost: chainConfig.rpcUrls[0] || 'https://api.trongrid.io'
       });
 
-      // Convert address to hex format for contract calls
-      const addressHex = tronWeb.address.toHex(address);
-
-      // Use triggerConstantContract for reading contract state (balanceOf)
-      // This is the proper way to call view functions in TronWeb v6
-      const balanceResult = await tronWeb.trx.triggerConstantContract(
-        tokenAddress,
-        'balanceOf(address)',
-        {},
-        [{ type: 'address', value: addressHex }],
-        addressHex // owner_address parameter
-      );
-
-      if (!balanceResult || !balanceResult.constant_result || balanceResult.constant_result.length === 0) {
-        throw new Error('No balance result returned from contract');
-      }
-
-      const balance = TronWebClass.toBigNumber('0x' + balanceResult.constant_result[0]).toString();
-
-      // Get decimals and symbol using contract instance
+      // Get contract instance
       const contract = await tronWeb.contract().at(tokenAddress);
-      const decimals = await contract.decimals().call().catch(() => 6); // Default to 6 for USDT
-      const symbol = await contract.symbol().call().catch(() => 'UNKNOWN');
+      
+      // Use methods.balanceOf().call() for TronWeb v6
+      // Ensure address is in base58 format
+      const balance = await contract.methods.balanceOf(address).call();
+      const decimals = await contract.methods.decimals().call().catch(() => 6); // Default to 6 for USDT
+      const symbol = await contract.methods.symbol().call().catch(() => 'UNKNOWN');
 
       // Convert balance from smallest unit to token units
-      const balanceBN = TronWebClass.toBigNumber(balance);
+      const balanceBN = TronWebClass.toBigNumber(balance.toString());
       const decimalsBN = TronWebClass.toBigNumber(10).pow(decimals);
       const balanceFormatted = balanceBN.dividedBy(decimalsBN).toFixed(decimals);
 
