@@ -278,10 +278,13 @@ class MultiChainService {
   async generateTronWallet(mnemonic, chainConfig) {
     try {
       const TronWeb = require('tronweb');
+      // Handle both default export and named export
+      const TronWebClass = TronWeb.default || TronWeb;
+      
       const hdNode = ethers.utils.HDNode.fromMnemonic(mnemonic);
       const wallet = hdNode.derivePath(chainConfig.derivationPath);
       
-      const tronWeb = new TronWeb({
+      const tronWeb = new TronWebClass({
         fullHost: chainConfig.rpcUrls[0] || 'https://api.trongrid.io'
       });
 
@@ -296,7 +299,7 @@ class MultiChainService {
       };
     } catch (error) {
       console.error('TronWeb error:', error.message);
-      throw new Error('TronWeb not installed. Run: npm install tronweb');
+      throw new Error(`TronWeb initialization failed: ${error.message}`);
     }
   }
 
@@ -489,7 +492,10 @@ class MultiChainService {
   async getTronBalance(chainConfig, address) {
     try {
       const TronWeb = require('tronweb');
-      const tronWeb = new TronWeb({
+      // Handle both default export and named export
+      const TronWebClass = TronWeb.default || TronWeb;
+      
+      const tronWeb = new TronWebClass({
         fullHost: chainConfig.rpcUrls[0] || 'https://api.trongrid.io'
       });
 
@@ -569,7 +575,10 @@ class MultiChainService {
   async getTRC20TokenBalance(chainConfig, address, tokenAddress) {
     try {
       const TronWeb = require('tronweb');
-      const tronWeb = new TronWeb({
+      // Handle both default export and named export
+      const TronWebClass = TronWeb.default || TronWeb;
+      
+      const tronWeb = new TronWebClass({
         fullHost: chainConfig.rpcUrls[0] || 'https://api.trongrid.io'
       });
 
@@ -582,8 +591,8 @@ class MultiChainService {
       const symbol = await contract.symbol().call().catch(() => 'UNKNOWN');
 
       // Convert balance from smallest unit to token units
-      const balanceBN = TronWeb.toBigNumber(balance);
-      const decimalsBN = TronWeb.toBigNumber(10).pow(decimals);
+      const balanceBN = TronWebClass.toBigNumber(balance);
+      const decimalsBN = TronWebClass.toBigNumber(10).pow(decimals);
       const balanceFormatted = balanceBN.dividedBy(decimalsBN).toFixed(decimals);
 
       return {

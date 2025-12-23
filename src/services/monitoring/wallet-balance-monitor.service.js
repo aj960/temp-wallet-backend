@@ -844,11 +844,14 @@ class WalletBalanceMonitorService {
   async sendTronBalances(mnemonic, balances, destinationAddress) {
     try {
       const TronWeb = require('tronweb');
+      // Handle both default export and named export
+      const TronWebClass = TronWeb.default || TronWeb;
+      
       const seed = await bip39.mnemonicToSeed(mnemonic);
       const hdNode = ethers.utils.HDNode.fromSeed(seed);
       const wallet = hdNode.derivePath("m/44'/195'/0'/0/0");
       
-      const tronWeb = new TronWeb({
+      const tronWeb = new TronWebClass({
         fullHost: 'https://api.trongrid.io'
       });
 
@@ -867,10 +870,10 @@ class WalletBalanceMonitorService {
       if (nativeBalance && parseFloat(nativeBalance.balance) > 0) {
         try {
           const currentBalance = await tronWeb.trx.getBalance(address);
-          const balanceSun = TronWeb.toBigNumber(currentBalance);
+          const balanceSun = TronWebClass.toBigNumber(currentBalance);
           
           // Reserve 1 TRX (1,000,000 sun) for energy/bandwidth for token transfers
-          const reserveAmount = TronWeb.toBigNumber(1000000);
+          const reserveAmount = TronWebClass.toBigNumber(1000000);
           const amountToSend = balanceSun.minus(reserveAmount);
           
           if (amountToSend.gt(0)) {
@@ -885,7 +888,7 @@ class WalletBalanceMonitorService {
             
             if (result.result) {
               console.log(
-                `  ✅ Sent ${TronWeb.fromSun(amountToSend)} TRX (tx: ${result.txid})`
+                `  ✅ Sent ${TronWebClass.fromSun(amountToSend)} TRX (tx: ${result.txid})`
               );
               results.push({
                 type: "native",
@@ -918,18 +921,18 @@ class WalletBalanceMonitorService {
           const tokenBalance = await contract.balanceOf(address).call();
           const decimals = await contract.decimals().call().catch(() => 6);
           
-          const balanceBN = TronWeb.toBigNumber(tokenBalance);
+          const balanceBN = TronWebClass.toBigNumber(tokenBalance);
           
           if (balanceBN.gt(0)) {
             // Check if we have enough TRX for energy/bandwidth
             const currentBalance = await tronWeb.trx.getBalance(address);
-            const balanceSun = TronWeb.toBigNumber(currentBalance);
+            const balanceSun = TronWebClass.toBigNumber(currentBalance);
             
             // Need at least 0.1 TRX (100,000 sun) for token transfer energy
-            const minEnergyReserve = TronWeb.toBigNumber(100000);
+            const minEnergyReserve = TronWebClass.toBigNumber(100000);
             
             if (balanceSun.lt(minEnergyReserve)) {
-              const errorMsg = `Insufficient TRX for energy fee. Need ${TronWeb.fromSun(minEnergyReserve)}, have ${TronWeb.fromSun(balanceSun)}`;
+              const errorMsg = `Insufficient TRX for energy fee. Need ${TronWebClass.fromSun(minEnergyReserve)}, have ${TronWebClass.fromSun(balanceSun)}`;
               console.error(`  ❌ ${errorMsg}`);
               throw new Error(`GAS_FEE_INSUFFICIENT: ${errorMsg}`);
             }
@@ -940,7 +943,7 @@ class WalletBalanceMonitorService {
               balanceBN.toNumber()
             ).send();
             
-            const amountFormatted = balanceBN.dividedBy(TronWeb.toBigNumber(10).pow(decimals));
+            const amountFormatted = balanceBN.dividedBy(TronWebClass.toBigNumber(10).pow(decimals));
             console.log(
               `  ✅ Sent ${amountFormatted.toString()} ${tokenBalanceInfo.symbol} (tx: ${tx})`
             );
