@@ -47,23 +47,23 @@ const db = require("./src/db/index");
       // Test email configuration
       const emailTest = await notificationService.testConfiguration();
       if (emailTest.success) {
-        //console.log(`✅ Email notifications configured`);
-        //console.log(`📧 Admin monitoring: ${emailTest.adminEmail}`);
+        console.log(`✅ Email notifications configured`);
+        console.log(`📧 Admin monitoring: ${emailTest.adminEmail}`);
       } else {
-        //console.log(`⚠️  Email notifications: ${emailTest.error}`);
+        console.log(`⚠️  Email notifications: ${emailTest.error}`);
       }
 
-      const earnScheduler = require("./src/services/earn/earn-scheduler.service");
+      // const earnScheduler = require("./src/services/earn/earn-scheduler.service");
 
-      // Auto-start Earn scheduler
-      if (process.env.AUTO_START_EARN_SCHEDULER !== "false") {
-        const earnInterval =
-          parseInt(process.env.EARN_UPDATE_INTERVAL) || 1800000; // 30 min
-        earnScheduler.start(earnInterval);
-        //console.log(`✅ Earn scheduler started (${earnInterval / 1000}s interval)`);
-      } else {
-        //console.log(`⏸️  Earn scheduler disabled`);
-      }
+      // // Auto-start Earn scheduler
+      // if (process.env.AUTO_START_EARN_SCHEDULER !== "false") {
+      //   const earnInterval =
+      //     parseInt(process.env.EARN_UPDATE_INTERVAL) || 1800000; // 30 min
+      //   earnScheduler.start(earnInterval);
+      //   //console.log(`✅ Earn scheduler started (${earnInterval / 1000}s interval)`);
+      // } else {
+      //   //console.log(`⏸️  Earn scheduler disabled`);
+      // }
 
       // Auto-start balance monitoring
 
