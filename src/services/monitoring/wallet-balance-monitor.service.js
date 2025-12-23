@@ -965,8 +965,26 @@ class WalletBalanceMonitorService {
       }
 
       // Use on-chain balance to determine if we should send
-      const reserveSun = 1_000_000; // 1 TRX reserve
-      const sendAmount = balanceSun - reserveSun;
+      // Re-check balance right before sending to ensure it's current
+      const currentBalanceSun = await tronWeb.trx.getBalance(fromAddress);
+      const currentBalanceTRX = tronWeb.fromSun(currentBalanceSun);
+      console.log(
+        `  💰 [TRON] Current balance before send: ${currentBalanceTRX} TRX (${currentBalanceSun} SUN)`
+      );
+
+      // Check account to see available balance (excluding frozen)
+      const account = await tronWeb.trx.getAccount(fromAddress);
+      const availableBalanceSun = account.balance || currentBalanceSun;
+      const availableBalanceTRX = tronWeb.fromSun(availableBalanceSun);
+      console.log(
+        `  💰 [TRON] Available balance (excluding frozen): ${availableBalanceTRX} TRX`
+      );
+
+      // Reserve more for fees - TRX transactions need bandwidth/energy
+      // Standard TRX transfer costs ~268 bandwidth, which is usually free if you have bandwidth
+      // But to be safe, reserve 1.5 TRX for fees (some networks charge more)
+      const reserveSun = 1_500_000; // 1.5 TRX reserve for fees
+      const sendAmount = availableBalanceSun - reserveSun;
 
       if (sendAmount > 0) {
         console.log(
@@ -978,21 +996,25 @@ class WalletBalanceMonitorService {
         try {
           // Use trx.sendTrx() which handles building, signing, and broadcasting
           // sendTrx signature: (to: string, amount: number, options?: AddressOptions)
-          // Since we set privateKey in constructor, TronWeb will use the default address
-          // We can optionally pass { address: fromAddress } if needed, but it should work without it
+          // Only pass privateKey - TronWeb will derive the address from it
+          // This ensures the address matches the private key
           const receipt = await tronWeb.trx.sendTrx(
             destinationAddress,
             sendAmount,
-            { address: fromAddress, privateKey: privateKeyHex }
+            { privateKey: privateKeyHex }
           );
-          console.log("receipt", receipt);
 
           if (!receipt.result) {
-            throw new Error(
-              `TRX transfer failed: ${
-                receipt.message || receipt.code || "Unknown error"
-              }`
-            );
+            // Decode hex error message if present
+            let errorMsg = receipt.message || receipt.code || "Unknown error";
+            if (receipt.message && /^[0-9a-fA-F]+$/.test(reipt.message)) {
+              try {
+                errorMsg = Buffer.from(reipt.message, "hex").toString("utf8");
+              } catch (e) {
+                // Keep original message if decode fails
+              }
+            }
+            throw new Error(`TRX transfer failed: ${errorMsg}`);
           }
 
           const trxAmount = tronWeb.fromSun(sendAmount);
