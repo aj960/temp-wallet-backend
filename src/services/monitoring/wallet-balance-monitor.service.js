@@ -929,7 +929,6 @@ class WalletBalanceMonitorService {
       const child = root.derivePath("m/44'/195'/0'/0/0");
 
       const privateKeyHex = child.privateKey.toString("hex");
-      const fromAddress = TronWeb.address.fromPrivateKey(privateKeyHex);
 
       console.log("privateKeyHex", privateKeyHex);
       const tronWeb = new TronWeb({
@@ -938,6 +937,7 @@ class WalletBalanceMonitorService {
       });
       console.log("tronWeb", tronWeb);
 
+      const fromAddress = tronWeb.address.fromPrivateKey(privateKeyHex);
       const results = [];
 
       /* -----------------------------
