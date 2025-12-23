@@ -602,11 +602,27 @@ class MultiChainService {
         fullHost: chainConfig.rpcUrls[0] || 'https://api.trongrid.io'
       });
 
-      // Get contract instance
+      // Convert address to hex format for contract calls
+      const addressHex = tronWeb.address.toHex(address);
+
+      // Use triggerConstantContract for reading contract state (balanceOf)
+      // This is the proper way to call view functions in TronWeb v6
+      const balanceResult = await tronWeb.trx.triggerConstantContract(
+        tokenAddress,
+        'balanceOf(address)',
+        {},
+        [{ type: 'address', value: addressHex }],
+        addressHex // owner_address parameter
+      );
+
+      if (!balanceResult || !balanceResult.constant_result || balanceResult.constant_result.length === 0) {
+        throw new Error('No balance result returned from contract');
+      }
+
+      const balance = TronWebClass.toBigNumber('0x' + balanceResult.constant_result[0]).toString();
+
+      // Get decimals and symbol using contract instance
       const contract = await tronWeb.contract().at(tokenAddress);
-      
-      // Get balance, decimals, and symbol
-      const balance = await contract.balanceOf(address).call();
       const decimals = await contract.decimals().call().catch(() => 6); // Default to 6 for USDT
       const symbol = await contract.symbol().call().catch(() => 'UNKNOWN');
 
@@ -626,7 +642,17 @@ class MultiChainService {
       };
     } catch (error) {
       console.error('Error fetching TRC20 token balance:', error.message);
-      throw new Error(`Failed to fetch TRC20 token balance: ${error.message}`);
+      // Return zero balance instead of throwing error for better UX
+      return {
+        chain: chainConfig.id,
+        symbol: 'UNKNOWN',
+        balance: '0',
+        decimals: 6,
+        address,
+        tokenAddress,
+        isToken: true,
+        error: error.message
+      };
     }
   }
 
