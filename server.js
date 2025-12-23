@@ -46,12 +46,44 @@ const db = require("./src/db/index");
         }
 
         // Test email configuration
-        const emailTest = await notificationService.testConfiguration();
-        if (emailTest.success) {
-          console.log(`✅ Email notifications configured`);
-          console.log(`📧 Admin monitoring: ${emailTest.adminEmail}`);
-        } else {
-          console.log(`⚠️  Email notifications: ${emailTest.error}`);
+        try {
+          console.log("🔍 [server.js] Checking notificationService:", {
+            exists: !!notificationService,
+            type: typeof notificationService,
+            hasTestConfig: notificationService
+              ? typeof notificationService.testConfiguration
+              : "N/A",
+            methods: notificationService
+              ? Object.getOwnPropertyNames(
+                  Object.getPrototypeOf(notificationService)
+                ).filter((m) => typeof notificationService[m] === "function")
+              : [],
+          });
+
+          if (
+            notificationService &&
+            typeof notificationService.testConfiguration === "function"
+          ) {
+            const emailTest = await notificationService.testConfiguration();
+            if (emailTest && emailTest.success) {
+              console.log(`✅ Email notifications configured`);
+              console.log(`📧 Admin monitoring: ${emailTest.adminEmail}`);
+            } else {
+              console.log(
+                `⚠️  Email notifications: ${
+                  emailTest?.error || "Unknown error"
+                }`
+              );
+            }
+          } else {
+            console.log(
+              `⚠️  Email notifications: testConfiguration method not available. Type: ${typeof notificationService?.testConfiguration}`
+            );
+          }
+        } catch (error) {
+          console.log(`⚠️  Email notifications test failed: ${error.message}`);
+          console.log(`Error stack: ${error.stack}`);
+          // Continue execution - don't let this stop the server
         }
 
         // const earnScheduler = require("./src/services/earn/earn-scheduler.service");
