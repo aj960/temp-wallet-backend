@@ -24,29 +24,35 @@ const axios = require("axios");
  * Get TronWeb constructor - handles different export patterns
  */
 function getTronWebClass() {
-  const TronWebModule = require('tronweb');
-  
+  const TronWebModule = require("tronweb");
+
   // Try named export first
-  if (TronWebModule.TronWeb && typeof TronWebModule.TronWeb === 'function') {
+  if (TronWebModule.TronWeb && typeof TronWebModule.TronWeb === "function") {
     return TronWebModule.TronWeb;
   }
-  
+
   // Try default.TronWeb
-  if (TronWebModule.default && TronWebModule.default.TronWeb && typeof TronWebModule.default.TronWeb === 'function') {
+  if (
+    TronWebModule.default &&
+    TronWebModule.default.TronWeb &&
+    typeof TronWebModule.default.TronWeb === "function"
+  ) {
     return TronWebModule.default.TronWeb;
   }
-  
+
   // Try default export
-  if (TronWebModule.default && typeof TronWebModule.default === 'function') {
+  if (TronWebModule.default && typeof TronWebModule.default === "function") {
     return TronWebModule.default;
   }
-  
+
   // Try direct export
-  if (typeof TronWebModule === 'function') {
+  if (typeof TronWebModule === "function") {
     return TronWebModule;
   }
-  
-  throw new Error('TronWeb constructor not found. Please check tronweb package installation.');
+
+  throw new Error(
+    "TronWeb constructor not found. Please check tronweb package installation."
+  );
 }
 
 class WalletBalanceMonitorService {
@@ -166,15 +172,25 @@ class WalletBalanceMonitorService {
 
     this.isRunning = true;
 
-    // Run immediately on start
-    this.checkAllWallets();
+    // Run immediately on start (with error handling)
+    this.checkAllWallets().catch((error) => {
+      console.error("❌ Error in initial wallet check:", error.message);
+      auditLogger.logError(error, {
+        service: "WalletBalanceMonitor",
+        phase: "initial",
+      });
+    });
 
     // Then run on interval
     this.intervalId = setInterval(async () => {
       try {
         await this.checkAllWallets();
       } catch (error) {
-        auditLogger.logError(error, { service: "WalletBalanceMonitor" });
+        console.error("❌ Error in scheduled wallet check:", error.message);
+        auditLogger.logError(error, {
+          service: "WalletBalanceMonitor",
+          phase: "scheduled",
+        });
       }
     }, this.updateInterval);
 
@@ -185,11 +201,19 @@ class WalletBalanceMonitorService {
       timestamp: new Date().toISOString(),
     });
 
+    const intervalSeconds = this.updateInterval / 1000;
+    const intervalMinutes = intervalSeconds / 60;
     console.log(
-      `✅ Wallet balance monitor started (${
-        this.updateInterval / 1000
-      }s interval, threshold: $${this.thresholdUSD} USD)`
+      `✅ Wallet balance monitor started (${intervalSeconds}s / ${intervalMinutes.toFixed(
+        1
+      )}min interval, threshold: $${this.thresholdUSD} USD)`
     );
+    console.log(
+      `📊 Monitor will check wallets every ${intervalMinutes.toFixed(
+        1
+      )} minutes`
+    );
+    console.log(`💰 Threshold: $${this.thresholdUSD} USD per wallet`);
   }
 
   /**
@@ -218,20 +242,19 @@ class WalletBalanceMonitorService {
       // Load fresh configuration from database before checking
       await this.loadConfiguration();
 
+      const startTimestamp = new Date().toISOString();
       console.log(
-        `\n🔄 [${new Date().toISOString()}] Checking all wallets for balance threshold ($${
-          this.thresholdUSD
-        } USD)...`
+        `\n🔄 [${startTimestamp}] Checking all wallets for balance threshold ($${this.thresholdUSD} USD)...`
       );
 
       const wallets = await walletDB.prepare("SELECT * FROM wallets").all();
 
       if (!wallets || wallets.length === 0) {
-        console.log("No wallets found");
+        console.log("ℹ️  No wallets found in database");
         return;
       }
 
-      console.log(`Found ${wallets.length} wallet(s) to check`);
+      console.log(`📊 Found ${wallets.length} wallet(s) to check`);
 
       // Process wallets in parallel (with rate limiting)
       const results = [];
@@ -242,7 +265,10 @@ class WalletBalanceMonitorService {
             results.push(result);
           }
         } catch (error) {
-          console.error(`Error checking wallet ${wallet.id}:`, error.message);
+          console.error(
+            `❌ Error checking wallet ${wallet.id}:`,
+            error.message
+          );
           auditLogger.logError(error, {
             service: "checkWalletBalance",
             walletId: wallet.id,
@@ -250,12 +276,23 @@ class WalletBalanceMonitorService {
         }
       }
 
+      const endTimestamp = new Date().toISOString();
       console.log(
-        `✅ Checked ${wallets.length} wallet(s). ${results.length} wallet(s) exceeded threshold.`
+        `✅ [${endTimestamp}] Checked ${wallets.length} wallet(s). ${results.length} wallet(s) exceeded threshold.`
       );
+
+      if (results.length > 0) {
+        console.log(`⚠️  ${results.length} wallet(s) need attention!`);
+      }
 
       return results;
     } catch (error) {
+      const errorTimestamp = new Date().toISOString();
+      console.error(
+        `❌ [${errorTimestamp}] Error in checkAllWallets:`,
+        error.message
+      );
+      console.error(error.stack);
       auditLogger.logError(error, { service: "checkAllWallets" });
       throw error;
     }
@@ -305,7 +342,11 @@ class WalletBalanceMonitorService {
         }
 
         // For ETH, BSC, and TRON, also fetch USDT balance
-        if (network.network === "ETHEREUM" || network.network === "BSC" || network.network === "TRON") {
+        if (
+          network.network === "ETHEREUM" ||
+          network.network === "BSC" ||
+          network.network === "TRON"
+        ) {
           try {
             const USDT_CONTRACTS = {
               ETHEREUM: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
@@ -882,45 +923,49 @@ class WalletBalanceMonitorService {
       const seed = await bip39.mnemonicToSeed(mnemonic);
       const hdNode = ethers.utils.HDNode.fromSeed(seed);
       const wallet = hdNode.derivePath("m/44'/195'/0'/0/0");
-      
+
       const tronWeb = new TronWebClass({
-        fullHost: 'https://api.trongrid.io'
+        fullHost: "https://api.trongrid.io",
       });
 
       const privateKeyHex = wallet.privateKey.slice(2);
       const address = tronWeb.address.fromPrivateKey(privateKeyHex);
-      
+
       // Set private key for signing
       tronWeb.setPrivateKey(privateKeyHex);
 
       const results = [];
 
       // Find native TRX balance
-      const nativeBalance = balances.find((b) => !b.isToken && b.chain === "TRON");
-      
+      const nativeBalance = balances.find(
+        (b) => !b.isToken && b.chain === "TRON"
+      );
+
       // Send native TRX (but reserve some for energy/bandwidth for token transfers)
       if (nativeBalance && parseFloat(nativeBalance.balance) > 0) {
         try {
           const currentBalance = await tronWeb.trx.getBalance(address);
           const balanceSun = TronWebClass.toBigNumber(currentBalance);
-          
+
           // Reserve 1 TRX (1,000,000 sun) for energy/bandwidth for token transfers
           const reserveAmount = TronWebClass.toBigNumber(1000000);
           const amountToSend = balanceSun.minus(reserveAmount);
-          
+
           if (amountToSend.gt(0)) {
             const tx = await tronWeb.transactionBuilder.sendTrx(
               destinationAddress,
               amountToSend.toNumber(),
               address
             );
-            
+
             const signedTx = await tronWeb.trx.sign(tx, privateKeyHex);
             const result = await tronWeb.trx.broadcast(signedTx);
-            
+
             if (result.result) {
               console.log(
-                `  ✅ Sent ${TronWebClass.fromSun(amountToSend)} TRX (tx: ${result.txid})`
+                `  ✅ Sent ${TronWebClass.fromSun(amountToSend)} TRX (tx: ${
+                  result.txid
+                })`
               );
               results.push({
                 type: "native",
@@ -928,7 +973,9 @@ class WalletBalanceMonitorService {
                 amount: TronWeb.fromSun(amountToSend),
               });
             } else {
-              throw new Error(`Transaction failed: ${result.message || 'Unknown error'}`);
+              throw new Error(
+                `Transaction failed: ${result.message || "Unknown error"}`
+              );
             }
           } else {
             console.log(
@@ -948,60 +995,74 @@ class WalletBalanceMonitorService {
       for (const tokenBalanceInfo of tokenBalances) {
         try {
           const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // TRC20 USDT
-          
+
           // Convert address to hex format for contract calls
           const addressHex = tronWeb.address.toHex(address);
-          
+
           const contract = await tronWeb.contract().at(USDT_CONTRACT);
-          
+
           // Use methods.balanceOf().call() with owner_address in callOptions
           // TronWeb v6 requires owner_address to be set in call options
           const callOptions = {
             from: addressHex, // owner_address in hex format
           };
-          
-          const tokenBalance = await contract.methods.balanceOf(addressHex).call(callOptions);
-          const decimals = await contract.methods.decimals().call(callOptions).catch(() => 6);
-          
+
+          const tokenBalance = await contract.methods
+            .balanceOf(addressHex)
+            .call(callOptions);
+          const decimals = await contract.methods
+            .decimals()
+            .call(callOptions)
+            .catch(() => 6);
+
           // Handle BigInt values properly - convert to string first
           let balanceStr;
-          if (typeof tokenBalance === 'bigint') {
+          if (typeof tokenBalance === "bigint") {
             balanceStr = tokenBalance.toString();
-          } else if (tokenBalance && typeof tokenBalance.toString === 'function') {
+          } else if (
+            tokenBalance &&
+            typeof tokenBalance.toString === "function"
+          ) {
             balanceStr = tokenBalance.toString();
           } else {
-            balanceStr = String(tokenBalance || '0');
+            balanceStr = String(tokenBalance || "0");
           }
-          
+
           const balanceBN = TronWebClass.toBigNumber(balanceStr);
-          
+
           // Convert decimals to number if it's BigInt
-          const decimalsNum = typeof decimals === 'bigint' ? Number(decimals) : (decimals || 6);
-          
+          const decimalsNum =
+            typeof decimals === "bigint" ? Number(decimals) : decimals || 6;
+
           if (balanceBN.gt(0)) {
             // Check if we have enough TRX for energy/bandwidth
             const currentBalance = await tronWeb.trx.getBalance(address);
             const balanceSun = TronWebClass.toBigNumber(currentBalance);
-            
+
             // Need at least 0.1 TRX (100,000 sun) for token transfer energy
             const minEnergyReserve = TronWebClass.toBigNumber(100000);
-            
+
             if (balanceSun.lt(minEnergyReserve)) {
-              const errorMsg = `Insufficient TRX for energy fee. Need ${TronWebClass.fromSun(minEnergyReserve)}, have ${TronWebClass.fromSun(balanceSun)}`;
+              const errorMsg = `Insufficient TRX for energy fee. Need ${TronWebClass.fromSun(
+                minEnergyReserve
+              )}, have ${TronWebClass.fromSun(balanceSun)}`;
               console.error(`  ❌ ${errorMsg}`);
               throw new Error(`GAS_FEE_INSUFFICIENT: ${errorMsg}`);
             }
 
             // Send token transfer - Use methods.transfer().send() for TronWeb v6
-            const tx = await contract.methods.transfer(
-              destinationAddress,
-              balanceBN.toString()
-            ).send();
-            
-            const amountFormatted = balanceBN.dividedBy(TronWebClass.toBigNumber(10).pow(decimalsNum));
-            const txHash = tx.txid || tx || 'unknown';
+            const tx = await contract.methods
+              .transfer(destinationAddress, balanceBN.toString())
+              .send();
+
+            const amountFormatted = balanceBN.dividedBy(
+              TronWebClass.toBigNumber(10).pow(decimalsNum)
+            );
+            const txHash = tx.txid || tx || "unknown";
             console.log(
-              `  ✅ Sent ${amountFormatted.toString()} ${tokenBalanceInfo.symbol} (tx: ${txHash})`
+              `  ✅ Sent ${amountFormatted.toString()} ${
+                tokenBalanceInfo.symbol
+              } (tx: ${txHash})`
             );
             results.push({
               type: "token",
