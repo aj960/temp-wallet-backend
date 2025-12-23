@@ -949,8 +949,11 @@ class WalletBalanceMonitorService {
         try {
           const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // TRC20 USDT
           
+          // Ensure address is in base58 format (Tron addresses)
+          const base58Address = tronWeb.address.isAddress(address) ? address : tronWeb.address.fromHex(address);
+          
           const contract = await tronWeb.contract().at(USDT_CONTRACT);
-          const tokenBalance = await contract.balanceOf(address).call();
+          const tokenBalance = await contract.balanceOf(base58Address).call();
           const decimals = await contract.decimals().call().catch(() => 6);
           
           const balanceBN = TronWebClass.toBigNumber(tokenBalance);
