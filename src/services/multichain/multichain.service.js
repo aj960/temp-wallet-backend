@@ -691,15 +691,55 @@ class MultiChainService {
         .balanceOf(addressHex)
         .call(callOptions);
 
+      // Decimals and symbol don't need owner_address, but we'll use callOptions for consistency
       const decimals = await contract.methods
         .decimals()
         .call(callOptions)
         .catch(() => 6); // Default to 6 for USDT
 
-      const symbol = await contract.methods
-        .symbol()
-        .call(callOptions)
-        .catch(() => "UNKNOWN");
+      // Try to get symbol - if it fails, try without callOptions
+      let symbol = "UNKNOWN";
+      try {
+        const symbolResult = await contract.methods.symbol().call(callOptions);
+        // Handle if symbol is returned as string or needs conversion
+        if (typeof symbolResult === "string") {
+          symbol = symbolResult;
+        } else if (
+          symbolResult &&
+          typeof symbolResult.toString === "function"
+        ) {
+          symbol = symbolResult.toString();
+        } else {
+          symbol = String(symbolResult || "UNKNOWN");
+        }
+      } catch (symbolError) {
+        try {
+          // Try without callOptions as fallback (symbol doesn't need owner_address)
+          const symbolResult = await contract.methods.symbol().call();
+          if (typeof symbolResult === "string") {
+            symbol = symbolResult;
+          } else if (
+            symbolResult &&
+            typeof symbolResult.toString === "function"
+          ) {
+            symbol = symbolResult.toString();
+          } else {
+            symbol = String(symbolResult || "UNKNOWN");
+          }
+        } catch (fallbackError) {
+          console.warn(
+            `Failed to fetch symbol for ${tokenAddress}:`,
+            fallbackError.message
+          );
+          // For USDT on Tron, we know it's USDT
+          if (
+            tokenAddress.toLowerCase() ===
+            "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t".toLowerCase()
+          ) {
+            symbol = "USDT";
+          }
+        }
+      }
 
       // Handle BigInt values properly - convert to string first
       let balanceStr;
