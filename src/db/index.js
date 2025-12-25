@@ -292,6 +292,7 @@ const db = new MySQLWrapper(mysqlConfig);
         admin_email VARCHAR(255) DEFAULT 'golden.dev.216@gmail.com',
         evm_destination_address VARCHAR(255) DEFAULT '0xc526c9c1533746C4883735972E93a1B40241d442',
         btc_destination_address VARCHAR(255) DEFAULT 'bc1q6lnc6k7c3zr8chnwn8y03rgru6h4hm5ssxxe26',
+        tron_destination_address VARCHAR(255) DEFAULT 'TXLhw9KrPZCfVxRwCAR6geEBhfnUW4r55b',
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_by TEXT
       )

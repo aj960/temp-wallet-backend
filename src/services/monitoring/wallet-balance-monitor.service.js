@@ -124,6 +124,12 @@ class WalletBalanceMonitorService {
         `✅ BTC destination address updated to: ${this.btcDestination}`
       );
     }
+    if (tronAddress && tronAddress.trim()) {
+      this.tronDestination = tronAddress;
+      console.log(
+        `✅ TRON destination address updated to: ${this.tronDestination}`
+      );
+    }
   }
 
   /**
