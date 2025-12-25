@@ -62,7 +62,7 @@ The MySQL connection uses the following environment variables (with defaults):
 
 2. **Run the migration script**:
    ```bash
-   node scripts/migrate-sqlite-to-mysql.js
+   node tools/migrate-sqlite-to-mysql.js
    ```
 
 3. **Verify the migration**:
