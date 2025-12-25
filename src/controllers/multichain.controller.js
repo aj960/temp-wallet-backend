@@ -17,7 +17,7 @@ const bip32 = BIP32Factory(ecc);
  * Get TronWeb constructor - handles different export patterns
  */
 function getTronWebClass() {
-  const { TronWebModule } = require("tronweb");
+  const TronWebModule = require("tronweb");
 
   // Try named export first
   if (TronWebModule.TronWeb && typeof TronWebModule.TronWeb === "function") {
