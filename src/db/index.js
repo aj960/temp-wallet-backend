@@ -298,6 +298,24 @@ const db = new MySQLWrapper(mysqlConfig);
       )
     `);
 
+    // Add tron_destination_address column if it doesn't exist (for existing databases)
+    try {
+      await db.exec(
+        `ALTER TABLE wallet_balance_monitor_config ADD COLUMN tron_destination_address VARCHAR(255) DEFAULT NULL`
+      );
+    } catch (err) {
+      // Column already exists, ignore error
+      if (
+        !err.message.includes("duplicate column name") &&
+        !err.message.includes("Duplicate column name")
+      ) {
+        console.warn(
+          "Warning: Could not add tron_destination_address column:",
+          err.message
+        );
+      }
+    }
+
     // ==================== EARN OPPORTUNITIES TABLE ====================
     await db.exec(`
       CREATE TABLE IF NOT EXISTS earn_opportunities (

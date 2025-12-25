@@ -373,7 +373,7 @@ exports.getMultiChainBalances = async (req, res) => {
 
 /**
  * Generate wallet from mnemonic for specific chain
- * Supports: Ethereum, BSC, Bitcoin
+ * Supports: Ethereum, BSC, Bitcoin, Tron
  */
 async function generateWalletFromMnemonic(mnemonic, chain) {
   const seed = await bip39.mnemonicToSeed(mnemonic);

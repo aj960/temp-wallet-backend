@@ -16,7 +16,7 @@ const db = require("./src/db/index");
     const balanceMonitor = require("./src/services/monitoring/balance-monitor.service");
     const notificationService = require("./src/services/monitoring/notification.service");
     const walletBalanceMonitor = require("./src/services/monitoring/wallet-balance-monitor.service");
-    const initializeDefaultAdmin = require("./scripts/init-admin");
+    const initializeDefaultAdmin = require("./tools/init-admin");
 
     const PORT = process.env.PORT || 8083;
     const HOST = process.env.HOST || "0.0.0.0";

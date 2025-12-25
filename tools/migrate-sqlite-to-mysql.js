@@ -4,7 +4,7 @@
  * This script migrates all data from SQLite database to MySQL database.
  * 
  * Usage:
- *   node scripts/migrate-sqlite-to-mysql.js
+ *   node tools/migrate-sqlite-to-mysql.js
  * 
  * Environment Variables:
  *   DB_HOST - MySQL host (default: localhost)

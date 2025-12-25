@@ -4,7 +4,7 @@
  * Creates the MySQL database and user if they don't exist.
  * 
  * Usage:
- *   node scripts/setup-mysql-db.js
+ *   node tools/setup-mysql-db.js
  * 
  * Note: This script requires MySQL root access to create the database and user.
  */
@@ -74,7 +74,7 @@ async function setupDatabase() {
     console.log(`   Database: ${dbConfig.database}`);
     console.log(`   User: ${dbConfig.user}`);
     console.log(`\n🚀 You can now run the migration script:`);
-    console.log(`   node scripts/migrate-sqlite-to-mysql.js`);
+    console.log(`   node tools/migrate-sqlite-to-mysql.js`);
     
   } catch (error) {
     console.error('\n❌ Setup failed:', error.message);

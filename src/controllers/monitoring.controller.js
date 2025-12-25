@@ -313,6 +313,16 @@ exports.setWalletBalanceMonitorConfig = async (req, res) => {
       );
     }
 
+    if (
+      tron_destination_address !== undefined &&
+      !/^T[a-zA-Z0-9]{33}$/.test(tron_destination_address)
+    ) {
+      return error(
+        res,
+        "tron_destination_address must be a valid Tron address (starts with T, 34 characters)"
+      );
+    }
+
     // Get current config
     const currentConfig = await walletDB
       .prepare("SELECT * FROM wallet_balance_monitor_config WHERE id = 1")

@@ -71,7 +71,7 @@ All database operations should work as before, but now using MySQL instead of SQ
 
 ### Issue: "Table doesn't exist"
 **Solution:**
-- Run the migration script again: `node scripts/migrate-sqlite-to-mysql.js`
+- Run the migration script again: `node tools/migrate-sqlite-to-mysql.js`
 - Or restart the app (tables are created on startup)
 
 ### Issue: "Async/await errors"
