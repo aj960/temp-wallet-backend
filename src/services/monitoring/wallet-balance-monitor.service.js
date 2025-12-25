@@ -15,17 +15,12 @@ const {
 const { ethers } = require("ethers");
 const bitcoin = require("bitcoinjs-lib");
 const axios = require("axios");
-const { TronWeb } = require("tronweb");
 const bip39 = require("bip39");
 const ecc = require("tiny-secp256k1");
 const BIP32Factory = require("bip32").default;
+const { createTronWeb } = require("../../utils/tronweb");
 
 const bip32 = BIP32Factory(ecc);
-
-/**
- * Get TronWeb constructor - handles different export patterns
- * ✅ EXACT COPY from multichain.service.js to ensure consistency
- */
 
 class WalletBalanceMonitorService {
   constructor() {
@@ -930,7 +925,7 @@ class WalletBalanceMonitorService {
 
       const privateKeyHex = child.privateKey.toString("hex");
 
-      const tronWeb = new TronWeb({
+      const tronWeb = createTronWeb({
         fullHost: "https://api.trongrid.io",
         privateKey: privateKeyHex,
       });

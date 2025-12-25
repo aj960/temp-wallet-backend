@@ -28,6 +28,7 @@ Key environment variables commonly used by the service:
 - `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
 - `JWT_SECRET`, `JWT_EXPIRES_IN`
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ADMIN_EMAIL`
+- `TRONGRID_API_KEY` - TronGrid API key for Tron network operations (required for TronWeb)
 
 Check health once running:
 

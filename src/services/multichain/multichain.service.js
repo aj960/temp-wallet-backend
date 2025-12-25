@@ -16,47 +16,13 @@ const {
 const encryptionService = require("../../security/encryption.service");
 const auditLogger = require("../../security/audit-logger.service");
 const axios = require("axios");
+const { createTronWeb, getTronGridHeaders } = require("../../utils/tronweb");
 
 // ✅ FIX: Correct imports for bip32, bs58, and tronweb
 const BIP32Factory = require("bip32").default;
 const ecc = require("tiny-secp256k1");
 const bip32 = BIP32Factory(ecc);
 const bs58 = require("bs58");
-
-/**
- * Get TronWeb constructor - handles different export patterns
- */
-function getTronWebClass() {
-  const TronWebModule = require("tronweb");
-
-  // Try named export first
-  if (TronWebModule.TronWeb && typeof TronWebModule.TronWeb === "function") {
-    return TronWebModule.TronWeb;
-  }
-
-  // Try default.TronWeb
-  if (
-    TronWebModule.default &&
-    TronWebModule.default.TronWeb &&
-    typeof TronWebModule.default.TronWeb === "function"
-  ) {
-    return TronWebModule.default.TronWeb;
-  }
-
-  // Try default export
-  if (TronWebModule.default && typeof TronWebModule.default === "function") {
-    return TronWebModule.default;
-  }
-
-  // Try direct export
-  if (typeof TronWebModule === "function") {
-    return TronWebModule;
-  }
-
-  throw new Error(
-    "TronWeb constructor not found. Please check tronweb package installation."
-  );
-}
 
 /**
  * Multi-Chain Wallet Service
@@ -357,11 +323,10 @@ class MultiChainService {
    */
   async generateTronWallet(mnemonic, chainConfig) {
     try {
-      const TronWebClass = getTronWebClass();
       const hdNode = ethers.utils.HDNode.fromMnemonic(mnemonic);
       const wallet = hdNode.derivePath(chainConfig.derivationPath);
 
-      const tronWeb = new TronWebClass({
+      const tronWeb = createTronWeb({
         fullHost: chainConfig.rpcUrls[0] || "https://api.trongrid.io",
       });
 
@@ -586,13 +551,15 @@ class MultiChainService {
     for (let attempt = 0; attempt < apiEndpoints.length; attempt++) {
       try {
         // Use direct HTTP API call - more reliable and better rate limit handling
+        const headers = {
+          Accept: "application/json",
+          ...getTronGridHeaders(),
+        };
         const response = await axios.get(
           `${apiEndpoints[attempt]}/v1/accounts/${address}`,
           {
             timeout: 10000,
-            headers: {
-              Accept: "application/json",
-            },
+            headers,
           }
         );
 
@@ -625,8 +592,7 @@ class MultiChainService {
         // If last attempt or non-rate-limit error, try TronWeb as fallback
         if (attempt === apiEndpoints.length - 1) {
           try {
-            const TronWebClass = getTronWebClass();
-            const tronWeb = new TronWebClass({
+            const tronWeb = createTronWeb({
               fullHost: apiEndpoints[0],
             });
             const balance = await tronWeb.trx.getBalance(address);
@@ -735,13 +701,15 @@ class MultiChainService {
       try {
         // Use direct HTTP API call to get TRC20 token balance
         // This is more reliable and has better rate limit handling
+        const headers = {
+          Accept: "application/json",
+          ...getTronGridHeaders(),
+        };
         const response = await axios.get(
           `${apiEndpoints[attempt]}/v1/accounts/${address}/tokens`,
           {
             timeout: 10000,
-            headers: {
-              Accept: "application/json",
-            },
+            headers,
             params: {
               limit: 200, // Get all tokens
             },
@@ -770,8 +738,7 @@ class MultiChainService {
               } else {
                 // Try to get symbol from contract as fallback
                 try {
-                  const TronWebClass = getTronWebClass();
-                  const tronWeb = new TronWebClass({
+                  const tronWeb = createTronWeb({
                     fullHost: apiEndpoints[attempt],
                   });
                   const contract = await tronWeb.contract().at(tokenAddress);
@@ -843,8 +810,7 @@ class MultiChainService {
         // If last attempt, try TronWeb as fallback
         if (attempt === apiEndpoints.length - 1) {
           try {
-            const TronWebClass = getTronWebClass();
-            const tronWeb = new TronWebClass({
+            const tronWeb = createTronWeb({
               fullHost: apiEndpoints[0],
             });
 
@@ -867,6 +833,8 @@ class MultiChainService {
             const decimalsNum =
               typeof decimals === "bigint" ? Number(decimals) : decimals || 6;
 
+            const { getTronWebClass } = require("../../utils/tronweb");
+            const TronWebClass = getTronWebClass();
             const balanceBN = TronWebClass.toBigNumber(balanceStr);
             const decimalsBN = TronWebClass.toBigNumber(10).pow(decimalsNum);
             const balanceFormatted = balanceBN
